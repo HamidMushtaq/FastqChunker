@@ -202,6 +202,7 @@ object Chunker
 		var secLastByte = ba(ei-1)
 		var numOfNewLines = 0
 		
+		
 		try
 		{
 			// Find "\n+" first
@@ -329,7 +330,7 @@ object Chunker
 	def processInputFile(inputFileName: String, suffix: String, outputFolder: String)
 	{
 		val fis = new FileInputStream(new File(inputFileName))
-		val gis = if (inputFileName.contains(".gz")) new GZIPInputStream(fis, bufferSize) else null
+		val gis = if (inputFileName.contains(".gz")) new GZIPInput(fis, bufferSize) else null
 		val bytesRead = new Array[Int](nThreads)
 		val bufferArray = new Array[Array[Byte]](nThreads)
 		val streamMap = new scala.collection.mutable.HashMap[String, PrintWriter]()
@@ -405,12 +406,12 @@ object Chunker
 	{
 		// fastq1 ////////////////////////////////////////////////////////////
 		val fis1 = new FileInputStream(new File(inputFileName1))
-		val gis1 = if (inputFileName2.contains(".gz")) new GZIPInputStream(fis1, bufferSize) else null
+		val gis1 = if (inputFileName2.contains(".gz")) new GZIPInput (fis1, bufferSize) else null
 		val bytesRead = new Array[Int](nThreads)
 		val bufferArray1 = new Array[Array[Byte]](nThreads)
 		// fastq2 ////////////////////////////////////////////////////////////
 		val fis2 = new FileInputStream(new File(inputFileName2))
-		val gis2 = if (inputFileName2.contains(".gz")) new GZIPInputStream(fis2, bufferSize) else null
+		val gis2 = if (inputFileName2.contains(".gz")) new GZIPInput (fis2, bufferSize) else null
 		val bufferArray2 = new Array[Array[Byte]](nThreads)
 		//////////////////////////////////////////////////////////////////////
 		val streamMap = new scala.collection.mutable.HashMap[String, PrintWriter]()
