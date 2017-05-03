@@ -9,6 +9,9 @@ import org.apache.spark.SparkConf
 import org.apache.spark.scheduler._
 import org.apache.commons.lang3.exception.ExceptionUtils
 import sys.process._
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
 
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
@@ -423,11 +426,16 @@ object Chunker
 		var leftOver1: Array[Byte] = null
 		var leftOver2: Array[Byte] = null
 		var i = 0
+		///
+		val readTime = new SWTimer
+		val uploadTime = new SWTimer
+		var f: scala.concurrent.Future[Unit] = null
 		while(!endReached)
 		{
 			val etGlobal = (System.currentTimeMillis - t0) / 1000
 			val et = (System.currentTimeMillis - startTime) / 1000
 			println(">> elapsed time = " + et + ", global elapsed time = " + etGlobal)
+			readTime.start
 			for(index <- 0 until nThreads)
 			{
 				if (endReached)
@@ -485,8 +493,26 @@ object Chunker
 			
 			println("End reached = " + endReached)
 			println(i + ". Read all " + nThreads + " chunks in the bufferArray, in " + ((System.currentTimeMillis - t0) / 1000) + " secs.")
-			processInterleavedChunks(bufferArray1, bufferArray2, startIndex, outputFolder, streamMap)
+			readTime.stop
+			uploadTime.start
+			///////////////////////////////////////////////////////////////////////////////////////
+			if (f != null)
+			{
+				while (!f.isCompleted)
+				{
+					println("Future still not completed...");
+					Thread.sleep(1000);
+				}
+			}
+			val ba1clone = bufferArray1.map(_.clone)
+			val ba2clone = bufferArray2.map(_.clone)
+			f = Future {
+				processInterleavedChunks(ba1clone, ba2clone, startIndex, outputFolder, streamMap)
+			}
+			//////////////////////////////////////////////////////////////////////////////////////
+			uploadTime.stop
 			println(i + ". Uploaded all " + nThreads + " chunks to " + outputFolder + " in " + ((System.currentTimeMillis - t0) / 1000) + " secs.")
+			println(i + ". READ time = " + readTime.getSecsF + ", UPLOAD time = " + uploadTime.getSecsF)
 			i += 1
 			startIndex += nThreads
 		}
