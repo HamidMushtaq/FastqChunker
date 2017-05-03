@@ -14,6 +14,6 @@ class GZIPOutputStream1 extends GZIPOutputStream
 	public GZIPOutputStream1(OutputStream out) throws IOException 
 	{
         super(out);
-		def.setLevel(1);
+		def.setLevel(4);
     } 
 }

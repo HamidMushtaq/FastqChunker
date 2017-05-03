@@ -524,6 +524,11 @@ object Chunker
 			bufferArray1 = bArrayArray1(dbi)
 			bufferArray2 = bArrayArray2(dbi)
 		}
+		while (!f.isCompleted)
+		{
+			println("Future still not completed...");
+			Thread.sleep(2000);
+		}
 		for ((k,pw) <- streamMap)
 			pw.close
 		if (gis1 != null)
