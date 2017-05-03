@@ -411,11 +411,17 @@ object Chunker
 		val fis1 = new FileInputStream(new File(inputFileName1))
 		val gis1 = if (inputFileName2.contains(".gz")) new GZIPInput (fis1, bufferSize) else null
 		val bytesRead = new Array[Int](nThreads)
-		val bufferArray1 = new Array[Array[Byte]](nThreads)
+		val bArrayArray1 = new Array[Array[Array[Byte]]](2)
+		bArrayArray1(0) = new Array[Array[Byte]](nThreads)
+		bArrayArray1(1) = new Array[Array[Byte]](nThreads)
+		var bufferArray1 = bArrayArray1(0)
 		// fastq2 ////////////////////////////////////////////////////////////
 		val fis2 = new FileInputStream(new File(inputFileName2))
 		val gis2 = if (inputFileName2.contains(".gz")) new GZIPInput (fis2, bufferSize) else null
-		val bufferArray2 = new Array[Array[Byte]](nThreads)
+		val bArrayArray2 = new Array[Array[Array[Byte]]](2)
+		bArrayArray2(0) = new Array[Array[Byte]](nThreads)
+		bArrayArray2(1) = new Array[Array[Byte]](nThreads)
+		var bufferArray2 = bArrayArray2(0)
 		//////////////////////////////////////////////////////////////////////
 		val streamMap = new scala.collection.mutable.HashMap[String, PrintWriter]()
 		val startTime = System.currentTimeMillis
@@ -426,6 +432,7 @@ object Chunker
 		var leftOver1: Array[Byte] = null
 		var leftOver2: Array[Byte] = null
 		var i = 0
+		var dbi = 0
 		///
 		val readTime = new SWTimer
 		val uploadTime = new SWTimer
@@ -504,10 +511,8 @@ object Chunker
 					Thread.sleep(1000);
 				}
 			}
-			val ba1clone = bufferArray1.map(_.clone)
-			val ba2clone = bufferArray2.map(_.clone)
 			f = Future {
-				processInterleavedChunks(ba1clone, ba2clone, startIndex, outputFolder, streamMap)
+				processInterleavedChunks(bufferArray1, bufferArray2, startIndex, outputFolder, streamMap)
 			}
 			//////////////////////////////////////////////////////////////////////////////////////
 			uploadTime.stop
@@ -515,6 +520,9 @@ object Chunker
 			println(i + ". READ time = " + readTime.getSecsF + ", UPLOAD time = " + uploadTime.getSecsF)
 			i += 1
 			startIndex += nThreads
+			dbi ^= 1
+			bufferArray1 = bArrayArray1(dbi)
+			bufferArray2 = bArrayArray2(dbi)
 		}
 		for ((k,pw) <- streamMap)
 			pw.close
