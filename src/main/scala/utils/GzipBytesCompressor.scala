@@ -10,14 +10,19 @@ import java.util.zip.GZIPOutputStream
 
 class GzipBytesCompressor(bytes: Array[Byte])
 {
-	def compress() : Array[Byte] = 
+	def compress(len: Int) : Array[Byte] = 
 	{
 		val bos = new ByteArrayOutputStream(bytes.length)
 		val gzip = new GZIPOutputStream1(bos)
-		gzip.write(bytes)
+		gzip.write(bytes, 0, len)
 		gzip.close
 		val compressed = bos.toByteArray
 		bos.close
 		return compressed
+	}
+	
+	def compress() : Array[Byte] = 
+	{
+		return compress(bytes.length)
 	}
 }

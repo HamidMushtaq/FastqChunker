@@ -166,7 +166,7 @@ object Chunker
 							dataIndex(threadIndex) += content.size
 							if ((dataIndex(threadIndex) > chunkSize) || endReached)
 							{
-								val compressedBytes = new GzipBytesCompressor(data(threadIndex).slice(0, dataIndex(threadIndex))).compress
+								val compressedBytes = new GzipBytesCompressor(data(threadIndex)).compress(dataIndex(threadIndex))
 								HDFSManager.writeWholeBinFile(outputFolder + "/" + cn + ".fq.gz", compressedBytes)
 								dataIndex(threadIndex) = 0
 							}
@@ -206,13 +206,13 @@ object Chunker
 			threadArray(threadIndex).join
 	}
 	
-	def splitOnReadBoundary(ba: Array[Byte]) : (Array[Byte], Array[Byte]) =
+	def splitOnReadBoundary(ba: Array[Byte], baSize: Int) : (Array[Byte], Array[Byte]) =
 	{
-		var ei = ba.size-1
+		//println("HAMID: baSize = " + baSize + ", ba.size = " + ba.size)
+		var ei = baSize-1
 		var lastByte = ba(ei)
 		var secLastByte = ba(ei-1)
 		var numOfNewLines = 0
-		
 		
 		try
 		{
@@ -239,7 +239,7 @@ object Chunker
 		{
 			case e: Exception => 
 			{
-				println("ba.size = " + ba.size)
+				println("ba.size = " + baSize)
 				println("ei = " + ei)
 				println("numOfNewLines = " + numOfNewLines)
 				println("\n>> Exception: " + ExceptionUtils.getStackTrace(e) + "!!!\n") 
@@ -247,7 +247,12 @@ object Chunker
 			}
 		}
 		
-		return (ba.slice(0, ei+2), ba.slice(ei+2, ba.size))
+		return (ba.slice(0, ei+2), ba.slice(ei+2, baSize))
+	}
+	
+	def splitOnReadBoundary(ba: Array[Byte]) : (Array[Byte], Array[Byte]) =
+	{
+		return splitOnReadBoundary(ba, ba.length)
 	}
 	
 	// Testing of splitOnReadBoundary ////////////////////////////////////////
@@ -423,6 +428,8 @@ object Chunker
 		bArrayArray1(0) = new Array[Array[Byte]](nThreads)
 		bArrayArray1(1) = new Array[Array[Byte]](nThreads)
 		var bufferArray1 = bArrayArray1(0)
+		val bArray1 = new Array[Byte](bufferSize*2)
+		var bArray1Len = 0
 		// fastq2 ////////////////////////////////////////////////////////////
 		val fis2 = new FileInputStream(new File(inputFileName2))
 		val gis2 = if (inputFileName2.contains(".gz")) new GZIPInput (fis2, bufferSize) else null
@@ -430,6 +437,8 @@ object Chunker
 		bArrayArray2(0) = new Array[Array[Byte]](nThreads)
 		bArrayArray2(1) = new Array[Array[Byte]](nThreads)
 		var bufferArray2 = bArrayArray2(0)
+		val bArray2 = new Array[Byte](bufferSize*2)
+		var bArray2Len = 0
 		//////////////////////////////////////////////////////////////////////
 		val streamMap = new scala.collection.mutable.HashMap[String, PrintWriter]()
 		val startTime = System.currentTimeMillis
@@ -490,12 +499,32 @@ object Chunker
 					}
 					else
 					{
-						val readBytes1 = tmpBufferArray1.slice(0, bytesRead(index))
-						val readBytes2 = tmpBufferArray2.slice(0, bytesRead(index))
-						val bArray1 = if (leftOver1 == null) readBytes1 else (leftOver1 ++ readBytes1)
-						val bArray2 = if (leftOver2 == null) readBytes2 else (leftOver2 ++ readBytes2)
-						var sa1: (Array[Byte], Array[Byte]) = splitOnReadBoundary(bArray1)
-						var sa2: (Array[Byte], Array[Byte]) = splitOnReadBoundary(bArray2)
+						if (leftOver1 == null)
+						{
+							Array.copy(tmpBufferArray1, 0, bArray1, 0, bytesRead(index))
+							bArray1Len = bytesRead(index) 
+						}
+						else
+						{
+							Array.copy(leftOver1, 0, bArray1, 0, leftOver1.length)
+							Array.copy(tmpBufferArray1, 0, bArray1, leftOver1.length, bytesRead(index))
+							bArray1Len = leftOver1.length + bytesRead(index)
+						}
+						
+						if (leftOver2 == null)
+						{
+							Array.copy(tmpBufferArray2, 0, bArray2, 0, bytesRead(index))
+							bArray2Len = bytesRead(index) 
+						}
+						else
+						{
+							Array.copy(leftOver2, 0, bArray2, 0, leftOver2.length)
+							Array.copy(tmpBufferArray2, 0, bArray2, leftOver2.length, bytesRead(index))
+							bArray2Len = leftOver2.length + bytesRead(index)
+						}
+					
+						var sa1: (Array[Byte], Array[Byte]) = splitOnReadBoundary(bArray1, bArray1Len)
+						var sa2: (Array[Byte], Array[Byte]) = splitOnReadBoundary(bArray2, bArray2Len)
 						bufferArray1(index) = sa1._1
 						bufferArray2(index) = sa2._1
 						leftOver1 = sa1._2
