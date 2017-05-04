@@ -32,8 +32,11 @@ object Chunker
 	var minHeaderLength = 0
 	var readLength = 0
 	var bufferSize = 0 
+	val chunkSize = 60e6
 	///////////////////////////////////////////////////
 	val useReadAndHeaderLenForInterleaving = true
+	var data: Array[Array[Byte]] = null
+	var dataIndex: Array[Int] = null
 	var blockSize = 8
 	val t0 = System.currentTimeMillis
 	
@@ -142,7 +145,7 @@ object Chunker
 	}
 	
 	def processInterleavedChunks(bufferArray1: Array[Array[Byte]], bufferArray2: Array[Array[Byte]], chunkStart: Int, outputFolder: String, 
-		streamMap: scala.collection.mutable.HashMap[String, PrintWriter]) =
+		streamMap: scala.collection.mutable.HashMap[String, PrintWriter], endReached: Boolean) =
 	{
 		val threadArray = new Array[Thread](nThreads)
 		
@@ -159,9 +162,14 @@ object Chunker
 						{
 							//println("Interleaving...")
 							val content = interleave(bufferArray1(threadIndex), bufferArray2(threadIndex))
-							//println("Interleaved!")
-							val compressedBytes = new GzipBytesCompressor(content).compress
-							HDFSManager.writeWholeBinFile(outputFolder + "/" + cn + ".fq.gz", compressedBytes)
+							Array.copy(content, 0, data(threadIndex), dataIndex(threadIndex), content.size)
+							dataIndex(threadIndex) += content.size
+							if ((dataIndex(threadIndex) > chunkSize) || endReached)
+							{
+								val compressedBytes = new GzipBytesCompressor(data(threadIndex).slice(0, dataIndex(threadIndex))).compress
+								HDFSManager.writeWholeBinFile(outputFolder + "/" + cn + ".fq.gz", compressedBytes)
+								dataIndex(threadIndex) = 0
+							}
 						}
 						else
 						{
@@ -437,6 +445,12 @@ object Chunker
 		val readTime = new SWTimer
 		val uploadTime = new SWTimer
 		var f: scala.concurrent.Future[Unit] = null
+		//
+		data = new Array[Array[Byte]](nThreads)
+		dataIndex = new Array[Int](nThreads)
+		data = data.map(x => new Array[Byte]((chunkSize*1.5).toInt))
+		dataIndex = dataIndex.map(x => 0)
+			
 		while(!endReached)
 		{
 			val etGlobal = (System.currentTimeMillis - t0) / 1000
@@ -512,7 +526,7 @@ object Chunker
 				}
 			}
 			f = Future {
-				processInterleavedChunks(bufferArray1, bufferArray2, startIndex, outputFolder, streamMap)
+				processInterleavedChunks(bufferArray1, bufferArray2, startIndex, outputFolder, streamMap, endReached)
 			}
 			//////////////////////////////////////////////////////////////////////////////////////
 			uploadTime.stop
