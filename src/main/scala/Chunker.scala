@@ -37,10 +37,11 @@ object Chunker
 	val useReadAndHeaderLenForInterleaving = true
 	var data: Array[Array[Byte]] = null
 	var dataIndex: Array[Int] = null
+	var readContent: Array[ByteArray] = null
 	var blockSize = 8
 	val t0 = System.currentTimeMillis
 	
-	def processChunks(bufferArray: Array[Array[Byte]], chunkStart: Int, suffix: String, outputFolder: String, 
+	def processChunks(bufferArray: Array[ByteArray], chunkStart: Int, suffix: String, outputFolder: String, 
 		streamMap: scala.collection.mutable.HashMap[String, PrintWriter]) =
 	{
 		val threadArray = new Array[Thread](nThreads)
@@ -52,12 +53,12 @@ object Chunker
 			{
 				override def run 
 				{
-					if ((bufferArray(threadIndex) != null) && (bufferArray(threadIndex).size > 1))
+					if ((bufferArray(threadIndex) != null) && (bufferArray(threadIndex).getLen > 1))
 					{
 						val cn = chunkStart + threadIndex
 						if (uploadCompressed)
 						{
-							val compressedBytes = new GzipBytesCompressor(bufferArray(threadIndex)).compress
+							val compressedBytes = new GzipBytesCompressor(bufferArray(threadIndex).getContent).compress
 							HDFSManager.writeWholeBinFile(outputFolder + "/" + cn + suffixStr + ".fq.gz", compressedBytes)
 						}
 						else
@@ -74,8 +75,8 @@ object Chunker
 								}
 								else
 								{
-									val content = new String(bufferArray(threadIndex))
-									streamMap(chunkID).write(new String(bufferArray(threadIndex)))
+									val content = new String(bufferArray(threadIndex).getContent)
+									streamMap(chunkID).write(new String(bufferArray(threadIndex).getContent))
 								}
 							}
 							catch 
@@ -93,12 +94,11 @@ object Chunker
 			threadArray(threadIndex).join
 	}
 	
-	def interleave(ba1: Array[Byte], ba2: Array[Byte]) : Array[Byte] =
+	def interleave(ba1: ByteArray, ba2: ByteArray, rba: ByteArray)
 	{
 		var startIndex = 0
 		var rIndex = 0
 		var index = 0
-		var r = new Array[Byte](ba1.size + ba2.size)
 		var done = false
 		val stride = readLength*2 + minHeaderLength - 10 // -10 to take care of anamolous data
 
@@ -110,10 +110,11 @@ object Chunker
 				if (index != -1)
 				{
 					val numOfElem = index - startIndex + 1
-					System.arraycopy(ba1, startIndex, r, rIndex, numOfElem)
+					System.arraycopy(ba1.getArray, startIndex, rba.getArray, rIndex, numOfElem)
 					rIndex += numOfElem
-					System.arraycopy(ba2, startIndex, r, rIndex, numOfElem)
+					System.arraycopy(ba2.getArray, startIndex, rba.getArray, rIndex, numOfElem)
 					rIndex += numOfElem
+					rba.setLen(rIndex)
 					
 					startIndex = index+1
 				}
@@ -131,20 +132,19 @@ object Chunker
 					index = ba1.indexOf('\n', index+1)
 					
 					val numOfElem = index - startIndex + 1
-					System.arraycopy(ba1, startIndex, r, rIndex, numOfElem)
+					System.arraycopy(ba1.getArray, startIndex, rba.getArray, rIndex, numOfElem)
 					rIndex += numOfElem
-					System.arraycopy(ba2, startIndex, r, rIndex, numOfElem)
+					System.arraycopy(ba2.getArray, startIndex, rba.getArray, rIndex, numOfElem)
 					rIndex += numOfElem
+					rba.setLen(rIndex)
 					
 					startIndex = index+1
 				}
 			}
 		}
-		
-		return r
 	}
 	
-	def processInterleavedChunks(bufferArray1: Array[Array[Byte]], bufferArray2: Array[Array[Byte]], chunkStart: Int, outputFolder: String, 
+	def processInterleavedChunks(bufferArray1: Array[ByteArray], bufferArray2: Array[ByteArray], chunkStart: Int, outputFolder: String, 
 		streamMap: scala.collection.mutable.HashMap[String, PrintWriter], endReached: Boolean) =
 	{
 		val threadArray = new Array[Thread](nThreads)
@@ -155,15 +155,16 @@ object Chunker
 			{
 				override def run 
 				{
-					if ((bufferArray1(threadIndex) != null) && (bufferArray1(threadIndex).size > 1))
+					val ba1: ByteArray = bufferArray1(threadIndex)
+					if ((bufferArray1(threadIndex) != null) && (bufferArray1(threadIndex).getLen > 1))
 					{
 						val cn = chunkStart + threadIndex
 						if (uploadCompressed)
 						{
 							//println("Interleaving...")
-							val content = interleave(bufferArray1(threadIndex), bufferArray2(threadIndex))
-							Array.copy(content, 0, data(threadIndex), dataIndex(threadIndex), content.size)
-							dataIndex(threadIndex) += content.size
+							interleave(bufferArray1(threadIndex), bufferArray2(threadIndex), readContent(threadIndex))
+							Array.copy(readContent(threadIndex).getArray, 0, data(threadIndex), dataIndex(threadIndex), readContent(threadIndex).getLen)
+							dataIndex(threadIndex) += readContent(threadIndex).getLen
 							if ((dataIndex(threadIndex) > chunkSize) || endReached)
 							{
 								val compressedBytes = new GzipBytesCompressor(data(threadIndex)).compress(dataIndex(threadIndex))
@@ -186,7 +187,8 @@ object Chunker
 								}
 								else
 								{
-									val content = new String(interleave(bufferArray1(threadIndex), bufferArray2(threadIndex)))
+									interleave(bufferArray1(threadIndex), bufferArray2(threadIndex), readContent(threadIndex))
+									val content = new String(readContent(threadIndex).getContent)
 									//println(">> Stream " + chunkID + " is already open. Writing content of size " + content.size)
 									streamMap(chunkID).write(content)
 								}
@@ -206,7 +208,7 @@ object Chunker
 			threadArray(threadIndex).join
 	}
 	
-	def splitOnReadBoundary(ba: Array[Byte], baSize: Int, leftOver: ByteArray) : Array[Byte] =
+	def splitOnReadBoundary(ba: Array[Byte], baSize: Int, retArray: ByteArray, leftOver: ByteArray)
 	{
 		//println("HAMID: baSize = " + baSize + ", ba.size = " + ba.size)
 		var ei = baSize-1
@@ -230,8 +232,8 @@ object Chunker
 			{
 				if (ei < 0)
 				{
+					retArray.copyFrom(ba, 0, 0)
 					leftOver.copyFrom(ba, 0, baSize)
-					return Array.empty[Byte]
 				}
 				if (ba(ei) == '\n')
 					numOfNewLines += 1
@@ -250,13 +252,13 @@ object Chunker
 			}
 		}
 		
+		retArray.copyFrom(ba, 0, ei+2)
 		leftOver.copyFrom(ba, ei+2, baSize - (ei+2))
-		return ba.slice(0, ei+2)
 	}
 	
-	def splitOnReadBoundary(ba: Array[Byte], leftOver: ByteArray) : Array[Byte] =
+	def splitOnReadBoundary(ba: Array[Byte], retArray: ByteArray, leftOver: ByteArray)
 	{
-		return splitOnReadBoundary(ba, ba.length, leftOver)
+		splitOnReadBoundary(ba, ba.length, retArray, leftOver)
 	}
 	
 	// Testing of splitOnReadBoundary ////////////////////////////////////////
@@ -278,11 +280,12 @@ object Chunker
 		val leftOver1 = new ByteArray(bufferSize)
 		///////////////////////////////////////////////////
 		val t0 = System.currentTimeMillis
-		val r = splitOnReadBoundary(bytes, leftOver1)
+		val r = new ByteArray(bufferSize*2)
+		splitOnReadBoundary(bytes, r, leftOver1)
 		val et = System.currentTimeMillis - t0
 		//////////////////////////////////////////////////
 		println(s + '\n')
-		val upperStr = new String(r)
+		val upperStr = new String(r.getContent)
 		val lowerStr = new String(leftOver1.getContent)
 		println("upperStr = {\n" + upperStr + "}\n")
 		println("=================================================")
@@ -353,7 +356,7 @@ object Chunker
 		val fis = new FileInputStream(new File(inputFileName))
 		val gis = if (inputFileName.contains(".gz")) new GZIPInput(fis, bufferSize) else null
 		val bytesRead = new Array[Int](nThreads)
-		val bufferArray = new Array[Array[Byte]](nThreads)
+		val bufferArray = new Array[ByteArray](nThreads)
 		val streamMap = new scala.collection.mutable.HashMap[String, PrintWriter]()
 		val startTime = System.currentTimeMillis
 		
@@ -388,19 +391,26 @@ object Chunker
 					if (bytesRead(index) == -1)
 					{
 						endReached = true
-						bufferArray(index) = leftOver.getArray
-						println((startIndex + index) + ". End reached, bufferArray.size = " + bufferArray(index).size)
+						bufferArray(index).copyFrom(leftOver)
+						println((startIndex + index) + ". End reached, bufferArray.size = " + bufferArray(index).getLen)
 					}
 					else
 					{
 						// Hamid : Have to replace some of the code with Array.copy
 						val readBytes = tmpBufferArray.slice(0, bytesRead(index))
 						val bArray = if (leftOver == null) readBytes else (leftOver.getArray ++ readBytes)
-						bufferArray(index) = splitOnReadBoundary(bArray, leftOver)
-						println((startIndex + index) + ". bufferArray.size = " + bufferArray(index).size + ", leftOver.size = " + leftOver.getLen)
+						if (leftOver == null)
+						{
+							leftOver = new ByteArray(bufferSize)
+							
+							for(i <- 0 until nThreads)
+								bufferArray(i) = new ByteArray(bufferSize*2)
+						}
+						splitOnReadBoundary(bArray, bufferArray(index), leftOver)
+						println((startIndex + index) + ". bufferArray.size = " + bufferArray(index).getLen + ", leftOver.size = " + leftOver.getLen)
 						if ((gis == null) && (bytesRead(index) < bufferSize))
 						{
-							println((startIndex + index) + ". Read = " + bytesRead(index) + ", bufferArray.size = " + bufferArray(index).size)
+							println((startIndex + index) + ". Read = " + bytesRead(index) + ", bufferArray.size = " + bufferArray(index).getLen)
 							endReached = true
 						}
 					}
@@ -428,9 +438,9 @@ object Chunker
 		val fis1 = new FileInputStream(new File(inputFileName1))
 		val gis1 = if (inputFileName2.contains(".gz")) new GZIPInput (fis1, bufferSize) else null
 		val bytesRead = new Array[Int](nThreads)
-		val bArrayArray1 = new Array[Array[Array[Byte]]](2)
-		bArrayArray1(0) = new Array[Array[Byte]](nThreads)
-		bArrayArray1(1) = new Array[Array[Byte]](nThreads)
+		val bArrayArray1 = new Array[Array[ByteArray]](2)
+		bArrayArray1(0) = new Array[ByteArray](nThreads)
+		bArrayArray1(1) = new Array[ByteArray](nThreads)
 		var bufferArray1 = bArrayArray1(0)
 		val bArray1 = new Array[Byte](bufferSize*2)
 		var bArray1Len = 0
@@ -438,9 +448,9 @@ object Chunker
 		// fastq2 ////////////////////////////////////////////////////////////
 		val fis2 = new FileInputStream(new File(inputFileName2))
 		val gis2 = if (inputFileName2.contains(".gz")) new GZIPInput (fis2, bufferSize) else null
-		val bArrayArray2 = new Array[Array[Array[Byte]]](2)
-		bArrayArray2(0) = new Array[Array[Byte]](nThreads)
-		bArrayArray2(1) = new Array[Array[Byte]](nThreads)
+		val bArrayArray2 = new Array[Array[ByteArray]](2)
+		bArrayArray2(0) = new Array[ByteArray](nThreads)
+		bArrayArray2(1) = new Array[ByteArray](nThreads)
 		var bufferArray2 = bArrayArray2(0)
 		val bArray2 = new Array[Byte](bufferSize*2)
 		var bArray2Len = 0
@@ -497,9 +507,9 @@ object Chunker
 					if (bytesRead(index) == -1)
 					{
 						endReached = true
-						bufferArray1(index) = leftOver1.getContent
-						bufferArray2(index) = leftOver2.getContent
-						println((startIndex + index) + ". End reached, bufferArray.size = " + bufferArray1(index).size)
+						bufferArray1(index).copyFrom(leftOver1.getArray, 0, leftOver1.getLen)
+						bufferArray2(index).copyFrom(leftOver2.getArray, 0, leftOver2.getLen)
+						println((startIndex + index) + ". End reached, bufferArray.size = " + bufferArray1(index).getLen)
 					}
 					else
 					{
@@ -508,6 +518,14 @@ object Chunker
 							Array.copy(tmpBufferArray1, 0, bArray1, 0, bytesRead(index))
 							bArray1Len = bytesRead(index) 
 							leftOver1 = new ByteArray(bufferSize)
+							readContent = new Array[ByteArray](nThreads)
+							
+							for(i <- 0 until nThreads)
+							{
+								bArrayArray1(0)(i) = new ByteArray(bufferSize*2)
+								bArrayArray1(1)(i) = new ByteArray(bufferSize*2)
+								readContent(i) = new ByteArray(bufferSize*3)
+							}
 						}
 						else
 						{
@@ -521,6 +539,12 @@ object Chunker
 							Array.copy(tmpBufferArray2, 0, bArray2, 0, bytesRead(index))
 							bArray2Len = bytesRead(index) 
 							leftOver2 = new ByteArray(bufferSize)
+							
+							for(i <- 0 until nThreads)
+							{
+								bArrayArray2(0)(i) = new ByteArray(bufferSize*2)
+								bArrayArray2(1)(i) = new ByteArray(bufferSize*2)
+							}
 						}
 						else
 						{
@@ -529,14 +553,14 @@ object Chunker
 							bArray2Len = leftOver2.getLen + bytesRead(index)
 						}
 					
-						bufferArray1(index) = splitOnReadBoundary(bArray1, bArray1Len, leftOver1)
-						bufferArray2(index) = splitOnReadBoundary(bArray2, bArray2Len, leftOver2)
-						println((startIndex + index) + ". bufferArray1.size = " + bufferArray1(index).size + ", leftOver1.size = " + leftOver1.getLen)
-						println((startIndex + index) + ". bufferArray2.size = " + bufferArray2(index).size + ", leftOver2.size = " + leftOver2.getLen)
+						splitOnReadBoundary(bArray1, bArray1Len, bufferArray1(index), leftOver1)
+						splitOnReadBoundary(bArray2, bArray2Len, bufferArray2(index), leftOver2)
+						println((startIndex + index) + ". bufferArray1.size = " + bufferArray1(index).getLen + ", leftOver1.size = " + leftOver1.getLen)
+						println((startIndex + index) + ". bufferArray2.size = " + bufferArray2(index).getLen + ", leftOver2.size = " + leftOver2.getLen)
 						if ((gis1 == null) && (bytesRead(index) < bufferSize))
 						{
-							println((startIndex + index) + ". Read = " + bytesRead(index) + ", bufferArray.size = " + bufferArray1(index).size + 
-								", " + bufferArray2(index).size)
+							println((startIndex + index) + ". Read = " + bytesRead(index) + ", bufferArray.size = " + bufferArray1(index).getLen + 
+								", " + bufferArray2(index).getLen)
 							endReached = true
 						}
 					}
