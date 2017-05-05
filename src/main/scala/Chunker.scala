@@ -32,11 +32,10 @@ object Chunker
 	var minHeaderLength = 0
 	var readLength = 0
 	var bufferSize = 0 
-	val chunkSize = 60e6
+	val chunkSize = 180e6
 	///////////////////////////////////////////////////
 	val useReadAndHeaderLenForInterleaving = true
-	var data: Array[Array[Byte]] = null
-	var dataIndex: Array[Int] = null
+	var data: Array[ByteArray] = null
 	var readContent: Array[ByteArray] = null
 	var blockSize = 8
 	val t0 = System.currentTimeMillis
@@ -163,13 +162,12 @@ object Chunker
 						{
 							//println("Interleaving...")
 							interleave(bufferArray1(threadIndex), bufferArray2(threadIndex), readContent(threadIndex))
-							Array.copy(readContent(threadIndex).getArray, 0, data(threadIndex), dataIndex(threadIndex), readContent(threadIndex).getLen)
-							dataIndex(threadIndex) += readContent(threadIndex).getLen
-							if ((dataIndex(threadIndex) > chunkSize) || endReached)
+							data(threadIndex).append(readContent(threadIndex))
+							if ((data(threadIndex).getLen > chunkSize) || endReached)
 							{
-								val compressedBytes = new GzipBytesCompressor(data(threadIndex)).compress(dataIndex(threadIndex))
+								val compressedBytes = new GzipBytesCompressor(data(threadIndex).getArray).compress(data(threadIndex).getLen)
 								HDFSManager.writeWholeBinFile(outputFolder + "/" + cn + ".fq.gz", compressedBytes)
-								dataIndex(threadIndex) = 0
+								data(threadIndex).setLen(0)
 							}
 						}
 						else
@@ -469,11 +467,7 @@ object Chunker
 		val uploadTime = new SWTimer
 		var f: scala.concurrent.Future[Unit] = null
 		//
-		data = new Array[Array[Byte]](nThreads)
-		dataIndex = new Array[Int](nThreads)
-		data = data.map(x => new Array[Byte]((chunkSize*1.5).toInt))
-		dataIndex = dataIndex.map(x => 0)
-			
+		
 		while(!endReached)
 		{
 			val etGlobal = (System.currentTimeMillis - t0) / 1000
@@ -518,12 +512,16 @@ object Chunker
 							Array.copy(tmpBufferArray1, 0, bArray1, 0, bytesRead(index))
 							bArray1Len = bytesRead(index) 
 							leftOver1 = new ByteArray(bufferSize)
+							//
+							data = new Array[ByteArray](nThreads)
 							readContent = new Array[ByteArray](nThreads)
 							
 							for(i <- 0 until nThreads)
 							{
 								bArrayArray1(0)(i) = new ByteArray(bufferSize*2)
 								bArrayArray1(1)(i) = new ByteArray(bufferSize*2)
+								//
+								data(i) = new ByteArray((chunkSize*1.25).toInt)
 								readContent(i) = new ByteArray(bufferSize*3)
 							}
 						}
