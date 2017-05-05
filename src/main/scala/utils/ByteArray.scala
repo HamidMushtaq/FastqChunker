@@ -1,5 +1,7 @@
 package utils
 
+import org.apache.commons.lang3.exception.ExceptionUtils
+
 // A wrapper for Array[Byte] with reserved size
 class ByteArray(bufSize: Int)
 {
@@ -30,8 +32,16 @@ class ByteArray(bufSize: Int)
 	
 	def append(src: ByteArray)
 	{
-		Array.copy(src.getArray, 0, a, bufLen, src.getLen)
-		bufLen += src.getLen
+		try
+		{
+			Array.copy(src.getArray, 0, a, bufLen, src.getLen)
+			bufLen += src.getLen
+		}
+		catch
+		{
+			case e: Exception => println(">> ERROR: bufSize = " + bufSize + 
+				", bufLen = " + (bufLen + src.getLen) + "\n" + ExceptionUtils.getStackTrace(e)) 
+		}
 	}
 	
 	def getArray(): Array[Byte] =

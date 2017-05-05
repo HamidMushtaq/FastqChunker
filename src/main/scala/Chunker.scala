@@ -32,12 +32,17 @@ object Chunker
 	var minHeaderLength = 0
 	var readLength = 0
 	var bufferSize = 0 
-	val chunkSize = 180e6
+	var useFiles = false
+	val chunkSize = 192e6
 	///////////////////////////////////////////////////
 	val useReadAndHeaderLenForInterleaving = true
+	var chunkCtr: Array[Int] = null
+	var bytesCtr: Array[Int] = null
+	var gzipOutStreams: Array[GZIPOutputStream1] = null
 	var data: Array[ByteArray] = null
 	var readContent: Array[ByteArray] = null
 	var blockSize = 8
+	val tmpDir = "/home/hamidmushtaq/halvade/spark/scala/chunkers/mirror/zipTmp/"
 	val t0 = System.currentTimeMillis
 	
 	def processChunks(bufferArray: Array[ByteArray], chunkStart: Int, suffix: String, outputFolder: String, 
@@ -162,12 +167,31 @@ object Chunker
 						{
 							//println("Interleaving...")
 							interleave(bufferArray1(threadIndex), bufferArray2(threadIndex), readContent(threadIndex))
-							data(threadIndex).append(readContent(threadIndex))
-							if ((data(threadIndex).getLen > chunkSize) || endReached)
+							if (useFiles)
 							{
-								val compressedBytes = new GzipBytesCompressor(data(threadIndex).getArray).compress(data(threadIndex).getLen)
-								HDFSManager.writeWholeBinFile(outputFolder + "/" + cn + ".fq.gz", compressedBytes)
-								data(threadIndex).setLen(0)
+								gzipOutStreams(threadIndex).write(readContent(threadIndex).getArray, 0, readContent(threadIndex).getLen)
+								bytesCtr(threadIndex) += readContent(threadIndex).getLen
+								if ((bytesCtr(threadIndex) > chunkSize) || endReached)
+								{
+									gzipOutStreams(threadIndex).close
+									bytesCtr(threadIndex) = 0
+									HDFSManager.upload(chunkCtr(threadIndex) + ".fq.gz", tmpDir, outputFolder)
+									chunkCtr(threadIndex) += nThreads
+									if (!endReached)
+										gzipOutStreams(threadIndex) = new GZIPOutputStream1(
+											new FileOutputStream(tmpDir + chunkCtr(threadIndex) + ".fq.gz"))
+								}
+							}
+							else
+							{
+								data(threadIndex).append(readContent(threadIndex))
+								if ((data(threadIndex).getLen > chunkSize) || endReached)
+								{
+									val compressedBytes = new GzipBytesCompressor(data(threadIndex).getArray).compress(data(threadIndex).getLen)
+									HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(threadIndex) + ".fq.gz", compressedBytes)
+									data(threadIndex).setLen(0)
+									chunkCtr(threadIndex) += nThreads
+								}
 							}
 						}
 						else
@@ -467,7 +491,11 @@ object Chunker
 		val uploadTime = new SWTimer
 		var f: scala.concurrent.Future[Unit] = null
 		//
+		val maxBytesAtBoundaries = 2*(readLength*2 + minHeaderLength)
 		
+		if (useFiles)
+			new java.io.File(tmpDir).mkdirs
+			
 		while(!endReached)
 		{
 			val etGlobal = (System.currentTimeMillis - t0) / 1000
@@ -513,16 +541,30 @@ object Chunker
 							bArray1Len = bytesRead(index) 
 							leftOver1 = new ByteArray(bufferSize)
 							//
-							data = new Array[ByteArray](nThreads)
 							readContent = new Array[ByteArray](nThreads)
+							chunkCtr = new Array[Int](nThreads)
+							if (useFiles)
+							{
+								gzipOutStreams = new Array[GZIPOutputStream1](nThreads)
+								bytesCtr = new Array[Int](nThreads)
+							}
+							else
+								data = new Array[ByteArray](nThreads)
 							
 							for(i <- 0 until nThreads)
 							{
 								bArrayArray1(0)(i) = new ByteArray(bufferSize*2)
 								bArrayArray1(1)(i) = new ByteArray(bufferSize*2)
 								//
-								data(i) = new ByteArray((chunkSize*1.25).toInt)
-								readContent(i) = new ByteArray(bufferSize*3)
+								readContent(i) = new ByteArray(2*bufferSize*2)
+								chunkCtr(i) = i
+								if (useFiles)
+								{
+									new java.io.File(tmpDir).mkdirs
+									gzipOutStreams(i) = new GZIPOutputStream1(new FileOutputStream(tmpDir + chunkCtr(i) + ".fq.gz"))
+								}
+								else
+									data(i) = new ByteArray(chunkSize.toInt+bufferSize*2)
 							}
 						}
 						else

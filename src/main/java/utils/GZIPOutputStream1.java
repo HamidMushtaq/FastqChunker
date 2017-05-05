@@ -9,7 +9,7 @@ import java.util.zip.GZIPOutputStream;
 import java.io.OutputStream;
 import java.io.IOException;
 
-class GZIPOutputStream1 extends GZIPOutputStream 
+public class GZIPOutputStream1 extends GZIPOutputStream 
 {
 	public GZIPOutputStream1(OutputStream out) throws IOException 
 	{
