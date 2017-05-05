@@ -11,7 +11,7 @@
 	<readLength>150</readLength>
 	<!-- numChunks is only used for uncompressed output -->
 	<numChunks>640</numChunks>
-	<driverMemGB>72</driverMemGB> 					
-	<numThreads>32</numThreads>
-	<blockSizeMB>88</blockSizeMB>
+	<driverMemGB>32</driverMemGB> 					
+	<numThreads>48</numThreads>
+	<blockSizeMB>8</blockSizeMB>
 </configuration>
