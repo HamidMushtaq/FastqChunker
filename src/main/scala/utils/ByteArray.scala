@@ -30,6 +30,20 @@ class ByteArray(bufSize: Int)
 		Array.copy(src.getArray, 0, a, 0, bufLen)
 	}
 	
+	def append(src: Array[Byte], si: Int, len: Int)
+	{
+		try
+		{
+			Array.copy(src, si, a, bufLen, len)
+			bufLen += len
+		}
+		catch
+		{
+			case e: Exception => println(">> ERROR: bufSize = " + bufSize + 
+				", bufLen = " + (bufLen + len) + "\n" + ExceptionUtils.getStackTrace(e)) 
+		}
+	}
+	
 	def append(src: ByteArray)
 	{
 		try

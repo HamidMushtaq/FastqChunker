@@ -33,7 +33,7 @@ class PairedFastqChunker(config: Configuration)
 		val fis1 = new FileInputStream(new File(inputFileName1))
 		val gis1 = if (inputFileName2.contains(".gz")) new GZIPInput (fis1, bufferSize) else null
 		val tmpBufferArray1 = new Array[Byte](bufferSize)
-		val bArray1 = new Array[Byte](bufferSize*2)
+		val bArray1 = new ByteArray(bufferSize*2)
 		// Double buffer
 		val bArrayArray1 = new Array[Array[ByteArray]](2)
 		var leftOver1: ByteArray = null
@@ -42,7 +42,7 @@ class PairedFastqChunker(config: Configuration)
 		val fis2 = new FileInputStream(new File(inputFileName2))
 		val gis2 = if (inputFileName2.contains(".gz")) new GZIPInput (fis2, bufferSize) else null
 		val tmpBufferArray2 = new Array[Byte](bufferSize)
-		val bArray2 = new Array[Byte](bufferSize*2)
+		val bArray2 = new ByteArray(bufferSize*2)
 		// Double buffer
 		val bArrayArray2 = new Array[Array[ByteArray]](2)
 		var leftOver2: ByteArray = null
@@ -58,8 +58,6 @@ class PairedFastqChunker(config: Configuration)
 		}
 		var bufferArray1 = bArrayArray1(0)
 		var bufferArray2 = bArrayArray2(0)
-		var bArray1Len = 0
-		var bArray2Len = 0
 		
 		val startTime = System.currentTimeMillis
 		var startIndex = 0
@@ -114,12 +112,10 @@ class PairedFastqChunker(config: Configuration)
 					{
 						if (leftOver1 == null) // First iteration
 						{
-							Array.copy(tmpBufferArray1, 0, bArray1, 0, bytesRead(index))
-							bArray1Len = bytesRead(index) 
+							bArray1.copyFrom(tmpBufferArray1, 0, bytesRead(index))
 							leftOver1 = new ByteArray(bufferSize)
 							//
-							Array.copy(tmpBufferArray2, 0, bArray2, 0, bytesRead(index))
-							bArray2Len = bytesRead(index) 
+							bArray2.copyFrom(tmpBufferArray2, 0, bytesRead(index))
 							leftOver2 = new ByteArray(bufferSize)
 							
 							for(i <- 0 until nThreads)
@@ -137,17 +133,15 @@ class PairedFastqChunker(config: Configuration)
 						}
 						else
 						{
-							Array.copy(leftOver1.getArray, 0, bArray1, 0, leftOver1.getLen)
-							Array.copy(tmpBufferArray1, 0, bArray1, leftOver1.getLen, bytesRead(index))
-							bArray1Len = leftOver1.getLen + bytesRead(index)
-							
-							Array.copy(leftOver2.getArray, 0, bArray2, 0, leftOver2.getLen)
-							Array.copy(tmpBufferArray2, 0, bArray2, leftOver2.getLen, bytesRead(index))
-							bArray2Len = leftOver2.getLen + bytesRead(index)
+							bArray1.copyFrom(leftOver1)
+							bArray1.append(tmpBufferArray1, 0, bytesRead(index))
+							//
+							bArray2.copyFrom(leftOver2)
+							bArray2.append(tmpBufferArray2, 0, bytesRead(index))
 						}
 						
-						splitOnReadBoundary(bArray1, bArray1Len, bufferArray1(index), leftOver1)
-						splitOnReadBoundary(bArray2, bArray2Len, bufferArray2(index), leftOver2)
+						splitOnReadBoundary(bArray1, bufferArray1(index), leftOver1)
+						splitOnReadBoundary(bArray2, bufferArray2(index), leftOver2)
 						println((startIndex + index) + ". bufferArray1.size = " + bufferArray1(index).getLen + ", leftOver1.size = " + leftOver1.getLen)
 						println((startIndex + index) + ". bufferArray2.size = " + bufferArray2(index).getLen + ", leftOver2.size = " + leftOver2.getLen)
 						if ((gis1 == null) && (bytesRead(index) < bufferSize))
@@ -178,8 +172,8 @@ class PairedFastqChunker(config: Configuration)
 			}
 			//////////////////////////////////////////////////////////////////////////////////////
 			uploadTime.stop
-			println(iter + " >> uploaded all " + nThreads + " chunks to " + outputFolder + " in " + ((System.currentTimeMillis - t0) / 1000) + " secs.")
-			println(iter + " >> read time = " + readTime.getSecsF + ", UPLOAD time = " + uploadTime.getSecsF)
+			println(iter + ". Uploaded all " + nThreads + " chunks to " + outputFolder + " in " + ((System.currentTimeMillis - t0) / 1000) + " secs.")
+			println(iter + ". Read time = " + readTime.getSecsF + ", UPLOAD time = " + uploadTime.getSecsF)
 			iter += 1
 			startIndex += nThreads
 			dbi ^= 1
@@ -265,8 +259,10 @@ class PairedFastqChunker(config: Configuration)
 		}
 	}
 	
-	private def splitOnReadBoundary(ba: Array[Byte], baSize: Int, retArray: ByteArray, leftOver: ByteArray)
+	private def splitOnReadBoundary(byteArray: ByteArray, retArray: ByteArray, leftOver: ByteArray)
 	{
+		val ba = byteArray.getArray
+		val baSize = byteArray.getLen
 		var ei = baSize-1
 		var lastByte = ba(ei)
 		var secLastByte = ba(ei-1)
