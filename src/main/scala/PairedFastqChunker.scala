@@ -67,7 +67,7 @@ class PairedFastqChunker(config: Configuration)
 		///
 		val readTime = new SWTimer
 		val uploadTime = new SWTimer
-		var f: scala.concurrent.Future[Unit] = null
+		var f: Seq[Future[(Int, Int)]] = null
 	
 		while(!endReached)
 		{
@@ -160,14 +160,12 @@ class PairedFastqChunker(config: Configuration)
 			///////////////////////////////////////////////////////////////////////////////////////
 			if (f != null)
 			{
-				while (!f.isCompleted)
-				{
-					println("Future still not completed...");
-					Thread.sleep(1000);
-				}
+				val r: Seq[(Int, Int)] = Await.result(Future.sequence(f), Duration.Inf)
+				println("r: " + r)
 			}
-			f = Future {
-				processInterleavedChunks(bArrayArray1, bArrayArray2, endReached)
+			f = for (ti <- 0 until nThreads) yield Future {
+				val ret = processInterleavedChunks(bArrayArray1(ti), bArrayArray2(ti), ti, endReached)
+				ret
 			}
 			//////////////////////////////////////////////////////////////////////////////////////
 			uploadTime.stop
@@ -180,11 +178,8 @@ class PairedFastqChunker(config: Configuration)
 			bArrayArray2 = bArrayArrayBuf2(dbi)
 		}
 		// Wait for the last iteration to complete
-		while (!f.isCompleted)
-		{
-			println("Future still not completed...");
-			Thread.sleep(2000);
-		}
+		val r: Seq[(Int, Int)] = Await.result(Future.sequence(f), Duration.Inf)
+		println("r: " + r)
 		if (gis1 != null)
 		{
 			gis1.close
@@ -197,37 +192,24 @@ class PairedFastqChunker(config: Configuration)
 		}
 	}
 
-	private def processInterleavedChunks(bArrayArray1: Array[ByteArray], bArrayArray2: Array[ByteArray], endReached: Boolean) =
+	private def processInterleavedChunks(bArray1: ByteArray, bArray2: ByteArray, ti: Int, endReached: Boolean) : (Int, Int) =
 	{
-		val threadArray = new Array[Thread](nThreads)
-		
-		for(threadIndex <- 0 until nThreads)
+		var r: (Int, Int) = (0,0)
+		if ((bArray1 != null) && (bArray1.getLen > 1))
 		{
-			threadArray(threadIndex) = new Thread 
+			interleave(bArray1, bArray2, readContent(ti))
+			gzipOutStreams(ti).write(readContent(ti).getArray, 0, readContent(ti).getLen)
+			gzipOutStreams(ti).flush
+			val numOfBytes = gzipOutStreams(ti).getSize 
+			r = (chunkCtr(ti), numOfBytes / 1e6.toInt) 
+			if ((numOfBytes > chunkSize) || endReached)
 			{
-				override def run 
-				{
-					val ba1: ByteArray = bArrayArray1(threadIndex)
-					if ((bArrayArray1(threadIndex) != null) && (bArrayArray1(threadIndex).getLen > 1))
-					{
-						interleave(bArrayArray1(threadIndex), bArrayArray2(threadIndex), readContent(threadIndex))
-						gzipOutStreams(threadIndex).write(readContent(threadIndex).getArray, 0, readContent(threadIndex).getLen)
-						gzipOutStreams(threadIndex).flush
-						if ((gzipOutStreams(threadIndex).getSize > chunkSize) || endReached)
-						{
-							HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(threadIndex) + ".fq.gz", 
-								gzipOutStreams(threadIndex).getByteArray)
-							chunkCtr(threadIndex) += nThreads
-							gzipOutStreams(threadIndex).reset
-						}							
-					}
-				}
-			}
-			threadArray(threadIndex).start
+				HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
+				chunkCtr(ti) += nThreads
+				gzipOutStreams(ti).reset
+			}							
 		}
-		
-		for(threadIndex <- 0 until nThreads)
-			threadArray(threadIndex).join
+		r
 	}
 	
 	private def interleave(ba1: ByteArray, ba2: ByteArray, rba: ByteArray)
