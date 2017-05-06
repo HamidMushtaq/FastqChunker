@@ -164,7 +164,7 @@ class PairedFastqChunker(config: Configuration)
 				println("r: " + r)
 			}
 			f = for (ti <- 0 until nThreads) yield Future {
-				val ret = processInterleavedChunks(bArrayArray1(ti), bArrayArray2(ti), ti, endReached)
+				val ret = interleaveAndWrite(bArrayArray1(ti), bArrayArray2(ti), ti, endReached)
 				ret
 			}
 			//////////////////////////////////////////////////////////////////////////////////////
@@ -192,7 +192,7 @@ class PairedFastqChunker(config: Configuration)
 		}
 	}
 
-	private def processInterleavedChunks(bArray1: ByteArray, bArray2: ByteArray, ti: Int, endReached: Boolean) : (Int, Int) =
+	private def interleaveAndWrite(bArray1: ByteArray, bArray2: ByteArray, ti: Int, endReached: Boolean) : (Int, Int) =
 	{
 		var r: (Int, Int) = (0,0)
 		if ((bArray1 != null) && (bArray1.getLen > 1))

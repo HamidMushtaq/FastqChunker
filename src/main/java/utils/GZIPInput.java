@@ -12,6 +12,8 @@ import java.util.Arrays;
 public class GZIPInput 
 {
 	private byte[] remBuffer;
+	private byte[] readBuffer;
+	private byte[] buffer;
 	int bufferSize;
 	GZIPInputStream gzi;
 	FileInputStream fis;
@@ -22,14 +24,14 @@ public class GZIPInput
 		this.bufferSize = bufferSize;
 		this.fis = fis;
 		remBuffer = null;
+		readBuffer = new byte[bufferSize];
+		buffer = new byte[2*bufferSize]; 
     } 
 	
 	public int read(byte[] rBuffer)
 	{
 		int index = 0;
 		int totalBytesRead = 0;
-		byte[] readBuffer = new byte[bufferSize];
-		byte[] buffer = new byte[2*bufferSize]; 
 		
 		try
 		{
