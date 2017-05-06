@@ -15,6 +15,7 @@ public class GZIPInput
 	private byte[] readBuffer;
 	private byte[] buffer;
 	int bufferSize;
+	int remBufferLen;
 	GZIPInputStream gzi;
 	FileInputStream fis;
 	
@@ -23,9 +24,10 @@ public class GZIPInput
         gzi = new GZIPInputStream(fis, bufferSize);
 		this.bufferSize = bufferSize;
 		this.fis = fis;
-		remBuffer = null;
+		remBuffer = new byte[bufferSize];
 		readBuffer = new byte[bufferSize];
-		buffer = new byte[2*bufferSize]; 
+		buffer = new byte[2*bufferSize];
+		remBufferLen = 0;
     } 
 	
 	public int read(byte[] rBuffer)
@@ -36,11 +38,11 @@ public class GZIPInput
 		try
 		{
 			// Copy from remBuffer first
-			if (remBuffer != null)
+			if (remBufferLen != 0)
 			{
-				System.arraycopy(remBuffer, 0, buffer, 0, remBuffer.length);
-				index += remBuffer.length;
-				totalBytesRead += remBuffer.length;
+				System.arraycopy(remBuffer, 0, buffer, 0, remBufferLen);
+				index += remBufferLen;
+				totalBytesRead += remBufferLen;
 			}
 			
 			while (index < bufferSize)
@@ -48,7 +50,7 @@ public class GZIPInput
 				int bytesRead = gzi.read(readBuffer);
 				if (bytesRead == -1)
 				{
-					remBuffer = null;
+					remBufferLen = 0;
 					break;
 				}
 				System.arraycopy(readBuffer, 0, buffer, index, bytesRead);
@@ -59,7 +61,8 @@ public class GZIPInput
 			if (index >= bufferSize)
 			{
 				System.arraycopy(buffer, 0, rBuffer, 0, bufferSize);
-				remBuffer = Arrays.copyOfRange(buffer, bufferSize, index);
+				remBufferLen = index - bufferSize;
+				System.arraycopy(buffer, bufferSize, remBuffer, 0, remBufferLen); 
 				totalBytesRead = bufferSize;
 			}
 			else
