@@ -25,7 +25,6 @@ class PairedFastqChunker(config: Configuration)
 	val inputFileName1 = config.getFastq1Path
 	val inputFileName2 = config.getFastq2Path
 	val outputFolder = config.getOutputFolder
-	val blockSize = 4
 	
 	def makeChunks()
 	{	
@@ -35,7 +34,7 @@ class PairedFastqChunker(config: Configuration)
 		val tmpBufferArray1 = new Array[Byte](bufferSize)
 		val bArray1 = new ByteArray(bufferSize*2)
 		// Double buffer
-		val bArrayArray1 = new Array[Array[ByteArray]](2)
+		val bArrayArrayBuf1 = new Array[Array[ByteArray]](2)
 		var leftOver1: ByteArray = null
 		
 		// for fastq2 ////////////////////////////////////////////////////////////
@@ -44,7 +43,7 @@ class PairedFastqChunker(config: Configuration)
 		val tmpBufferArray2 = new Array[Byte](bufferSize)
 		val bArray2 = new ByteArray(bufferSize*2)
 		// Double buffer
-		val bArrayArray2 = new Array[Array[ByteArray]](2)
+		val bArrayArrayBuf2 = new Array[Array[ByteArray]](2)
 		var leftOver2: ByteArray = null
 		//////////////////////////////////////////////////////////////////////
 		
@@ -53,11 +52,11 @@ class PairedFastqChunker(config: Configuration)
 		// Both elements of the double buffer contain a ByteArray for each thread
 		for(i <- 0 until 2)
 		{
-			bArrayArray1(i) = new Array[ByteArray](nThreads)
-			bArrayArray2(i) = new Array[ByteArray](nThreads)					
+			bArrayArrayBuf1(i) = new Array[ByteArray](nThreads)
+			bArrayArrayBuf2(i) = new Array[ByteArray](nThreads)					
 		}
-		var bufferArray1 = bArrayArray1(0)
-		var bufferArray2 = bArrayArray2(0)
+		var bArrayArray1 = bArrayArrayBuf1(0)
+		var bArrayArray2 = bArrayArrayBuf2(0)
 		
 		val startTime = System.currentTimeMillis
 		var startIndex = 0
@@ -69,9 +68,7 @@ class PairedFastqChunker(config: Configuration)
 		val readTime = new SWTimer
 		val uploadTime = new SWTimer
 		var f: scala.concurrent.Future[Unit] = null
-		//
-		val maxBytesAtBoundaries = 2*(readLength*2 + minHeaderLength)
-		
+	
 		while(!endReached)
 		{
 			val etGlobal = (System.currentTimeMillis - t0) / 1000
@@ -80,15 +77,16 @@ class PairedFastqChunker(config: Configuration)
 			readTime.start
 			for(index <- 0 until nThreads)
 			{
-				if (endReached)
+				if (endReached) // This condition will be reached for eg. when end was reached (if bytesRead(index) == -1) on index = 7, and now index > 7.
 				{
-					bufferArray1(index) = null
-					bufferArray2(index) = null
+					bArrayArray1(index) = null
+					bArrayArray2(index) = null
 					bytesRead(index) = -1
 					println((startIndex + index) + ". End already reached. So ignoring.")
 				}
 				else
 				{
+					// Read from the fastq files /////////////////////////////
 					if (gis1 == null) // If reading uncompressed fastq files 
 					{
 						bytesRead(index) = fis1.read(tmpBufferArray1)
@@ -100,17 +98,18 @@ class PairedFastqChunker(config: Configuration)
 						gis2.read(tmpBufferArray2)
 						println((startIndex + index) + ". gz: Bytes read = " + bytesRead(index))
 					}
+					//////////////////////////////////////////////////////////
 					
-					if (bytesRead(index) == -1) // If end reached
+					if (bytesRead(index) == -1) // -1 means that no more bytes were read. That is, end was reached.
 					{
 						endReached = true
-						bufferArray1(index).copyFrom(leftOver1.getArray, 0, leftOver1.getLen)
-						bufferArray2(index).copyFrom(leftOver2.getArray, 0, leftOver2.getLen)
-						println((startIndex + index) + ". End reached, bufferArray.size = " + bufferArray1(index).getLen)
+						bArrayArray1(index).copyFrom(leftOver1)
+						bArrayArray2(index).copyFrom(leftOver2)
+						println((startIndex + index) + ". End reached, bArrayArray.size = " + bArrayArray1(index).getLen)
 					}
 					else // If end still not reached
 					{
-						if (leftOver1 == null) // First iteration
+						if (leftOver1 == null) // First ever iteration (iter = 0, index = 0)
 						{
 							bArray1.copyFrom(tmpBufferArray1, 0, bytesRead(index))
 							leftOver1 = new ByteArray(bufferSize)
@@ -120,18 +119,18 @@ class PairedFastqChunker(config: Configuration)
 							
 							for(i <- 0 until nThreads)
 							{
-								bArrayArray1(0)(i) = new ByteArray(bufferSize*2)
-								bArrayArray1(1)(i) = new ByteArray(bufferSize*2)
-								//
-								bArrayArray2(0)(i) = new ByteArray(bufferSize*2)
-								bArrayArray2(1)(i) = new ByteArray(bufferSize*2)
+								for(e <- 0 until 2)
+								{
+									bArrayArrayBuf1(e)(i) = new ByteArray(bufferSize*2)
+									bArrayArrayBuf2(e)(i) = new ByteArray(bufferSize*2)
+								}
 								//
 								readContent(i) = new ByteArray(2*bufferSize*2)
 								chunkCtr(i) = i
 								gzipOutStreams(i) = new GZIPOutputStream1(new ByteArrayOutputStream(bufferSize*2))
 							}
 						}
-						else
+						else // Not the first ever iteration -> !(iter == 0 && index == 0)
 						{
 							bArray1.copyFrom(leftOver1)
 							bArray1.append(tmpBufferArray1, 0, bytesRead(index))
@@ -140,14 +139,14 @@ class PairedFastqChunker(config: Configuration)
 							bArray2.append(tmpBufferArray2, 0, bytesRead(index))
 						}
 						
-						splitOnReadBoundary(bArray1, bufferArray1(index), leftOver1)
-						splitOnReadBoundary(bArray2, bufferArray2(index), leftOver2)
-						println((startIndex + index) + ". bufferArray1.size = " + bufferArray1(index).getLen + ", leftOver1.size = " + leftOver1.getLen)
-						println((startIndex + index) + ". bufferArray2.size = " + bufferArray2(index).getLen + ", leftOver2.size = " + leftOver2.getLen)
+						splitOnReadBoundary(bArray1, bArrayArray1(index), leftOver1)
+						splitOnReadBoundary(bArray2, bArrayArray2(index), leftOver2)
+						println((startIndex + index) + " -> bArrayArray1.size = " + bArrayArray1(index).getLen + ", leftOver1.size = " + leftOver1.getLen)
+						println((startIndex + index) + " -> bArrayArray2.size = " + bArrayArray2(index).getLen + ", leftOver2.size = " + leftOver2.getLen)
 						if ((gis1 == null) && (bytesRead(index) < bufferSize))
 						{
-							println((startIndex + index) + ". Read = " + bytesRead(index) + ", bufferArray.size = " + bufferArray1(index).getLen + 
-								", " + bufferArray2(index).getLen)
+							println((startIndex + index) + " -> Read = " + bytesRead(index) + ", bArrayArray.size = " + bArrayArray1(index).getLen + 
+								", " + bArrayArray2(index).getLen)
 							endReached = true
 						}
 					}
@@ -155,7 +154,7 @@ class PairedFastqChunker(config: Configuration)
 			}
 			
 			println("End reached = " + endReached)
-			println(iter + ". Read all " + nThreads + " chunks in the bufferArray, in " + ((System.currentTimeMillis - t0) / 1000) + " secs.")
+			println(iter + ". Read all " + nThreads + " chunks in the bArrayArray, in " + ((System.currentTimeMillis - t0) / 1000) + " secs.")
 			readTime.stop
 			uploadTime.start
 			///////////////////////////////////////////////////////////////////////////////////////
@@ -168,7 +167,7 @@ class PairedFastqChunker(config: Configuration)
 				}
 			}
 			f = Future {
-				processInterleavedChunks(bufferArray1, bufferArray2, startIndex, endReached)
+				processInterleavedChunks(bArrayArray1, bArrayArray2, endReached)
 			}
 			//////////////////////////////////////////////////////////////////////////////////////
 			uploadTime.stop
@@ -177,8 +176,8 @@ class PairedFastqChunker(config: Configuration)
 			iter += 1
 			startIndex += nThreads
 			dbi ^= 1
-			bufferArray1 = bArrayArray1(dbi)
-			bufferArray2 = bArrayArray2(dbi)
+			bArrayArray1 = bArrayArrayBuf1(dbi)
+			bArrayArray2 = bArrayArrayBuf2(dbi)
 		}
 		// Wait for the last iteration to complete
 		while (!f.isCompleted)
@@ -198,7 +197,7 @@ class PairedFastqChunker(config: Configuration)
 		}
 	}
 
-	private def processInterleavedChunks(bufferArray1: Array[ByteArray], bufferArray2: Array[ByteArray], chunkStart: Int, endReached: Boolean) =
+	private def processInterleavedChunks(bArrayArray1: Array[ByteArray], bArrayArray2: Array[ByteArray], endReached: Boolean) =
 	{
 		val threadArray = new Array[Thread](nThreads)
 		
@@ -208,13 +207,10 @@ class PairedFastqChunker(config: Configuration)
 			{
 				override def run 
 				{
-					val ba1: ByteArray = bufferArray1(threadIndex)
-					if ((bufferArray1(threadIndex) != null) && (bufferArray1(threadIndex).getLen > 1))
+					val ba1: ByteArray = bArrayArray1(threadIndex)
+					if ((bArrayArray1(threadIndex) != null) && (bArrayArray1(threadIndex).getLen > 1))
 					{
-						val cn = chunkStart + threadIndex
-						
-						//println("Interleaving...")
-						interleave(bufferArray1(threadIndex), bufferArray2(threadIndex), readContent(threadIndex))
+						interleave(bArrayArray1(threadIndex), bArrayArray2(threadIndex), readContent(threadIndex))
 						gzipOutStreams(threadIndex).write(readContent(threadIndex).getArray, 0, readContent(threadIndex).getLen)
 						gzipOutStreams(threadIndex).flush
 						if ((gzipOutStreams(threadIndex).getSize > chunkSize) || endReached)
