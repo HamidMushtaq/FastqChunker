@@ -29,11 +29,8 @@ public class Configuration implements Serializable
 	private String fastq1Path;
 	private String fastq2Path;
 	private String outputFolder;
-	private String uploadCompressed;
-	private String interleave;
-	private String minHeaderLength;
-	private String readLength;
-	private String numChunks;
+	private String compLevel;
+	private String chunkSizeMB;
 	private String driverMemGB;
 	private String numThreads;
 	private String blockSizeMB;
@@ -52,11 +49,8 @@ public class Configuration implements Serializable
 			fastq1Path = document.getElementsByTagName("fastq1Path").item(0).getTextContent();
 			fastq2Path = document.getElementsByTagName("fastq2Path").item(0).getTextContent();
 			outputFolder = correctFolderName(document.getElementsByTagName("outputFolder").item(0).getTextContent());
-			uploadCompressed = document.getElementsByTagName("uploadCompressed").item(0).getTextContent();
-			interleave = document.getElementsByTagName("interleave").item(0).getTextContent();
-			minHeaderLength = document.getElementsByTagName("minHeaderLength").item(0).getTextContent();
-			readLength = document.getElementsByTagName("readLength").item(0).getTextContent();
-			numChunks = document.getElementsByTagName("numChunks").item(0).getTextContent();
+			compLevel = document.getElementsByTagName("compLevel").item(0).getTextContent();
+			chunkSizeMB = document.getElementsByTagName("chunkSizeMB").item(0).getTextContent();
 			driverMemGB = document.getElementsByTagName("driverMemGB").item(0).getTextContent();
 			numThreads = document.getElementsByTagName("numThreads").item(0).getTextContent();
 			blockSizeMB = document.getElementsByTagName("blockSizeMB").item(0).getTextContent();
@@ -103,29 +97,14 @@ public class Configuration implements Serializable
 		return outputFolder;
 	}
 	
-	public String getUploadCompressed()
+	public String getCompLevel()
 	{
-		return uploadCompressed.toLowerCase();
+		return compLevel;
 	}
 	
-	public String getInterleave()
+	public String getChunkSizeMB()
 	{
-		return interleave.toLowerCase();
-	}
-	
-	public String getMinHeaderLength()
-	{
-		return minHeaderLength;
-	}
-	
-	public String getReadLength()
-	{
-		return readLength;
-	}
-			
-	public String getNumChunks()
-	{
-		return numChunks;
+		return chunkSizeMB;
 	}
 	
 	public String getDriverMemGB()
@@ -154,14 +133,11 @@ public class Configuration implements Serializable
 		System.out.println("1. fastq1Path:\t" + fastq1Path);
 		System.out.println("2. fastq2Path:\t" + fastq2Path);
 		System.out.println("3. outputFolder:\t" + outputFolder);
-		System.out.println("4. uploadCompressed:\t" + uploadCompressed);
-		System.out.println("5. interleave:\t" + interleave);
-		System.out.println("6. minHeaderLength:\t" + minHeaderLength);
-		System.out.println("7. readLength:\t" + readLength);
-		System.out.println("8. numChunks:\t" + numChunks);
-		System.out.println("9. driverMemGBGB:\t" + driverMemGB);
-		System.out.println("10. numThreads:\t" + numThreads);
-		System.out.println("11. blockSizeMB:\t" + blockSizeMB);
+		System.out.println("4. compLevel:\t" + compLevel);
+		System.out.println("5. chunkSizeMB:\t" + chunkSizeMB);
+		System.out.println("6. driverMemGB:\t" + driverMemGB);
+		System.out.println("7. numThreads:\t" + numThreads);
+		System.out.println("8. blockSizeMB:\t" + blockSizeMB);
 		System.out.println("*************************");
 	}
 }

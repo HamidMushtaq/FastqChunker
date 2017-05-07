@@ -3,19 +3,16 @@ import sys.process._
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
+import java.util.zip.GZIPInputStream
 import java.io._
 import utils._
 
 class PairedFastqChunker(config: Configuration)
 {
 	val nThreads = config.getNumThreads.toInt
-	val numOfChunks = config.getNumChunks.toInt
-	val uploadCompressed = config.getUploadCompressed == "true"
-	val makeInterleavedChunks = config.getInterleave == "true"
-	val minHeaderLength = config.getMinHeaderLength.toInt
-	val readLength = config.getReadLength.toInt
 	val bufferSize = config.getBlockSizeMB.toInt * 1024 * 1024
-	val chunkSize: Int = 60e6.toInt
+	val chunkSize: Int = config.getChunkSizeMB.toInt * 1024 * 1024
+	val compLevel = config.getCompLevel.toInt
 	
 	val readContent = new Array[ByteArray](nThreads)
 	val bytesRead = new Array[Int](nThreads)
@@ -25,6 +22,8 @@ class PairedFastqChunker(config: Configuration)
 	val inputFileName1 = config.getFastq1Path
 	val inputFileName2 = config.getFastq2Path
 	val outputFolder = config.getOutputFolder
+	
+	val (minHeaderLength, readLength) = getReadAndHeaderLength()
 	
 	def makeChunks()
 	{	
@@ -127,7 +126,7 @@ class PairedFastqChunker(config: Configuration)
 								//
 								readContent(i) = new ByteArray(2*bufferSize*2)
 								chunkCtr(i) = i
-								gzipOutStreams(i) = new GZIPOutputStream1(new ByteArrayOutputStream(bufferSize*2))
+								gzipOutStreams(i) = new GZIPOutputStream1(new ByteArrayOutputStream(bufferSize*2), compLevel)
 							}
 						}
 						else // Not the first ever iteration -> !(iter == 0 && index == 0)
@@ -204,12 +203,15 @@ class PairedFastqChunker(config: Configuration)
 			r = (chunkCtr(ti), numOfBytes / 1e6.toInt) 
 			if ((numOfBytes > chunkSize) || endReached)
 			{
+				val os = gzipOutStreams(ti).getOutputStream
 				gzipOutStreams(ti).close
 				HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
 				chunkCtr(ti) += nThreads
 				if (!endReached)
-					gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream(bufferSize*2))
-				//gzipOutStreams(ti).reset
+				{
+					os.reset
+					gzipOutStreams(ti) = new GZIPOutputStream1(os, compLevel)
+				}
 			}							
 		}
 		r
@@ -287,5 +289,17 @@ class PairedFastqChunker(config: Configuration)
 		
 		retArray.copyFrom(ba, 0, ei+2)
 		leftOver.copyFrom(ba, ei+2, baSize - (ei+2))
+	}
+	
+	private def getReadAndHeaderLength() : (Int, Int) = 
+	{
+		val gzip = new GZIPInputStream(new FileInputStream(inputFileName1));
+		val br = new BufferedReader(new InputStreamReader(gzip));
+		
+		val headerLen = br.readLine.size
+		val readLen = br.readLine.size
+		br.close
+		
+		(headerLen, readLen)
 	}
 }
