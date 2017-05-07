@@ -204,9 +204,12 @@ class PairedFastqChunker(config: Configuration)
 			r = (chunkCtr(ti), numOfBytes / 1e6.toInt) 
 			if ((numOfBytes > chunkSize) || endReached)
 			{
+				gzipOutStreams(ti).close
 				HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
 				chunkCtr(ti) += nThreads
-				gzipOutStreams(ti).reset
+				if (!endReached)
+					gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream(bufferSize*2))
+				//gzipOutStreams(ti).reset
 			}							
 		}
 		r
