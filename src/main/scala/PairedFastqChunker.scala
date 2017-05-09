@@ -206,13 +206,26 @@ class PairedFastqChunker(config: Configuration)
 				val os = gzipOutStreams(ti).getOutputStream
 				gzipOutStreams(ti).close
 				HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
-				chunkCtr(ti) += nThreads
+				val s = "ti: " + ti + ", " + (numOfBytes / 1e6.toInt).toString + " MB\n"
+				HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
 				if (!endReached)
 				{
 					os.reset
 					gzipOutStreams(ti) = new GZIPOutputStream1(os, compLevel)
+					chunkCtr(ti) += nThreads
 				}
+				else if (ti == (nThreads-1)) // endReached && ti == nThreads-1
+					HDFSManager.writeWholeFile(outputFolder + "/ulStatus/end.txt", chunkCtr(ti).toString + "\n")
 			}							
+		}
+		else if (endReached)
+		{
+			val numOfBytes = gzipOutStreams(ti).getSize 
+			gzipOutStreams(ti).close
+			HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
+			r = (chunkCtr(ti), numOfBytes / 1e6.toInt)
+			if (ti == (nThreads-1))
+				HDFSManager.writeWholeFile(outputFolder + "/ulStatus/end.txt", chunkCtr(ti).toString + "\n")
 		}
 		r
 	}
