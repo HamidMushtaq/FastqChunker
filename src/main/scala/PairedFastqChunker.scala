@@ -189,6 +189,7 @@ class PairedFastqChunker(config: Configuration)
 			fis1.close
 			fis2.close
 		}
+		HDFSManager.writeWholeFile(outputFolder + "/ulStatus/end.txt", "")
 	}
 
 	private def interleaveAndWrite(bArray1: ByteArray, bArray2: ByteArray, ti: Int, endReached: Boolean) : (Int, Int) =
@@ -214,8 +215,6 @@ class PairedFastqChunker(config: Configuration)
 					gzipOutStreams(ti) = new GZIPOutputStream1(os, compLevel)
 					chunkCtr(ti) += nThreads
 				}
-				else if (ti == (nThreads-1)) // endReached && ti == nThreads-1
-					HDFSManager.writeWholeFile(outputFolder + "/ulStatus/end.txt", chunkCtr(ti).toString + "\n")
 			}							
 		}
 		else if (endReached)
@@ -223,9 +222,9 @@ class PairedFastqChunker(config: Configuration)
 			val numOfBytes = gzipOutStreams(ti).getSize 
 			gzipOutStreams(ti).close
 			HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
+			val s = "ti: " + ti + ", " + (numOfBytes / 1e6.toInt).toString + " MB\n"
+			HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
 			r = (chunkCtr(ti), numOfBytes / 1e6.toInt)
-			if (ti == (nThreads-1))
-				HDFSManager.writeWholeFile(outputFolder + "/ulStatus/end.txt", chunkCtr(ti).toString + "\n")
 		}
 		r
 	}
