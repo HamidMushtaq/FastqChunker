@@ -13,17 +13,31 @@ class PairedFastqChunker(config: Configuration)
 	val bufferSize = config.getBlockSizeMB.toInt * 1024 * 1024
 	val chunkSize: Int = config.getChunkSizeMB.toInt * 1024 * 1024
 	val compLevel = config.getCompLevel.toInt
+	val interleave = config.getInterleave.toBoolean
 	
 	val readContent = new Array[ByteArray](nThreads)
 	val bytesRead = new Array[Int](nThreads)
 	val chunkCtr = new Array[Int](nThreads)
-	val gzipOutStreams = new Array[GZIPOutputStream1](nThreads)
-		
+	val iterCtr = new Array[Int](nThreads)
+	
 	val inputFileName1 = config.getFastq1Path
 	val inputFileName2 = config.getFastq2Path
 	val outputFolder = config.getOutputFolder
 	
 	val (minHeaderLength, readLength) = getReadAndHeaderLength()
+
+	val gzipOutStreams = if (interleave) new Array[GZIPOutputStream1](nThreads) else new Array[GZIPOutputStream1](2*nThreads)
+	for(ti <- 0 until nThreads)
+	{
+		if (interleave)
+			gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream(bufferSize*2), compLevel)
+		else
+		{
+			gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream(bufferSize), compLevel)
+			gzipOutStreams(ti+nThreads) = new GZIPOutputStream1(new ByteArrayOutputStream(bufferSize), compLevel)
+		}
+		readContent(ti) = new ByteArray(2*bufferSize*2)
+	}
 	
 	def makeChunks()
 	{	
@@ -95,7 +109,7 @@ class PairedFastqChunker(config: Configuration)
 					{
 						bytesRead(index) =  gis1.read(tmpBufferArray1)
 						gis2.read(tmpBufferArray2)
-						println((startIndex + index) + ". gz: Bytes read = " + bytesRead(index))
+						//println((startIndex + index) + ". gz: Bytes read = " + bytesRead(index))
 					}
 					//////////////////////////////////////////////////////////
 					
@@ -124,9 +138,7 @@ class PairedFastqChunker(config: Configuration)
 									bArrayArrayBuf2(e)(i) = new ByteArray(bufferSize*2)
 								}
 								//
-								readContent(i) = new ByteArray(2*bufferSize*2)
 								chunkCtr(i) = i
-								gzipOutStreams(i) = new GZIPOutputStream1(new ByteArrayOutputStream(bufferSize*2), compLevel)
 							}
 						}
 						else // Not the first ever iteration -> !(iter == 0 && index == 0)
@@ -138,16 +150,13 @@ class PairedFastqChunker(config: Configuration)
 							bArray2.append(tmpBufferArray2, 0, bytesRead(index))
 						}
 						
-						splitOnReadBoundary(bArray1, bArrayArray1(index), leftOver1)
-						splitOnReadBoundary(bArray2, bArrayArray2(index), leftOver2)
-						println((startIndex + index) + " -> bArrayArray1.size = " + bArrayArray1(index).getLen + ", leftOver1.size = " + leftOver1.getLen)
-						println((startIndex + index) + " -> bArrayArray2.size = " + bArrayArray2(index).getLen + ", leftOver2.size = " + leftOver2.getLen)
-						if ((gis1 == null) && (bytesRead(index) < bufferSize))
+						bArrayArray1(index).synchronized
 						{
-							println((startIndex + index) + " -> Read = " + bytesRead(index) + ", bArrayArray.size = " + bArrayArray1(index).getLen + 
-								", " + bArrayArray2(index).getLen)
-							endReached = true
+							splitOnReadBoundary(bArray1, bArrayArray1(index), leftOver1)
+							splitOnReadBoundary(bArray2, bArrayArray2(index), leftOver2)
 						}
+						//println((startIndex + index) + " -> bArrayArray1.size = " + bArrayArray1(index).getLen + ", leftOver1.size = " + leftOver1.getLen)
+						//println((startIndex + index) + " -> bArrayArray2.size = " + bArrayArray2(index).getLen + ", leftOver2.size = " + leftOver2.getLen)
 					}
 				}
 			}
@@ -163,7 +172,15 @@ class PairedFastqChunker(config: Configuration)
 				println("r: " + r)
 			}
 			f = for (ti <- 0 until nThreads) yield Future {
-				val ret = interleaveAndWrite(bArrayArray1(ti), bArrayArray2(ti), ti, endReached)
+				val ret = {
+					gzipOutStreams(ti).synchronized
+					{
+						if (interleave)
+							interleaveAndWrite(bArrayArray1(ti), bArrayArray2(ti), ti, endReached)
+						else 
+							WritePairedChunks(bArrayArray1(ti), bArrayArray2(ti), ti, endReached)
+					}
+				}
 				ret
 			}
 			//////////////////////////////////////////////////////////////////////////////////////
@@ -195,9 +212,13 @@ class PairedFastqChunker(config: Configuration)
 	private def interleaveAndWrite(bArray1: ByteArray, bArray2: ByteArray, ti: Int, endReached: Boolean) : (Int, Int) =
 	{
 		var r: (Int, Int) = (0,0)
+		
 		if ((bArray1 != null) && (bArray1.getLen > 1))
 		{
-			interleave(bArray1, bArray2, readContent(ti))
+			bArray1.synchronized
+			{
+				interleave(bArray1, bArray2, readContent(ti))
+			}
 			gzipOutStreams(ti).write(readContent(ti).getArray, 0, readContent(ti).getLen)
 			gzipOutStreams(ti).flush
 			val numOfBytes = gzipOutStreams(ti).getSize 
@@ -222,6 +243,57 @@ class PairedFastqChunker(config: Configuration)
 			val numOfBytes = gzipOutStreams(ti).getSize 
 			gzipOutStreams(ti).close
 			HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
+			val s = "ti: " + ti + ", " + (numOfBytes / 1e6.toInt).toString + " MB\n"
+			HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
+			r = (chunkCtr(ti), numOfBytes / 1e6.toInt)
+		}
+		r
+	}
+	
+	private def WritePairedChunks(bArray1: ByteArray, bArray2: ByteArray, ti: Int, endReached: Boolean) : (Int, Int) =
+	{
+		var r: (Int, Int) = (0,0)
+		iterCtr(ti) += 1
+		println("iterCtr" + ti + " = " + iterCtr(ti))
+		
+		if ((bArray1 != null) && (bArray1.getLen > 1))
+		{
+			bArray1.synchronized
+			{
+				gzipOutStreams(ti).write(bArray1.getArray, 0, bArray1.getLen)
+				gzipOutStreams(ti+nThreads).write(bArray2.getArray, 0, bArray2.getLen)
+			}
+			gzipOutStreams(ti).flush
+			gzipOutStreams(ti+nThreads).flush
+			val numOfBytes = gzipOutStreams(ti).getSize 
+			r = (chunkCtr(ti), numOfBytes / 1e6.toInt) 
+			if ((numOfBytes > chunkSize) || endReached)
+			{
+				val os1 = gzipOutStreams(ti).getOutputStream
+				val os2 = gzipOutStreams(ti+nThreads).getOutputStream
+				gzipOutStreams(ti).close
+				gzipOutStreams(ti+nThreads).close
+				HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-1.fq.gz", gzipOutStreams(ti).getByteArray)
+				HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-2.fq.gz", gzipOutStreams(ti+nThreads).getByteArray)
+				val s = "ti: " + ti + ", " + (numOfBytes / 1e6.toInt).toString + " MB\n"
+				HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
+				if (!endReached)
+				{
+					os1.reset
+					os2.reset
+					gzipOutStreams(ti) = new GZIPOutputStream1(os1, compLevel)
+					gzipOutStreams(ti+nThreads) = new GZIPOutputStream1(os2, compLevel)
+					chunkCtr(ti) += nThreads
+				}
+			}							
+		}
+		else if (endReached)
+		{
+			val numOfBytes = gzipOutStreams(ti).getSize 
+			gzipOutStreams(ti).close
+			gzipOutStreams(ti+nThreads).close
+			HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-1.fq.gz", gzipOutStreams(ti).getByteArray)
+			HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-2.fq.gz", gzipOutStreams(ti+nThreads).getByteArray)
 			val s = "ti: " + ti + ", " + (numOfBytes / 1e6.toInt).toString + " MB\n"
 			HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
 			r = (chunkCtr(ti), numOfBytes / 1e6.toInt)
@@ -305,9 +377,13 @@ class PairedFastqChunker(config: Configuration)
 	
 	private def getReadAndHeaderLength() : (Int, Int) = 
 	{
-		val gzip = new GZIPInputStream(new FileInputStream(inputFileName1));
-		val br = new BufferedReader(new InputStreamReader(gzip));
-		
+		val br = {
+			if (inputFileName1.contains(".gz"))
+				new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(inputFileName1))))
+			else
+				new BufferedReader(new FileReader(inputFileName1))
+		}
+				
 		val headerLen = br.readLine.size
 		val readLen = br.readLine.size
 		br.close

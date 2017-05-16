@@ -34,6 +34,7 @@ public class Configuration implements Serializable
 	private String driverMemGB;
 	private String numThreads;
 	private String blockSizeMB;
+	private String interleave;
 	private Long startTime;
 	
 	public void initialize(String configFile)
@@ -54,6 +55,7 @@ public class Configuration implements Serializable
 			driverMemGB = document.getElementsByTagName("driverMemGB").item(0).getTextContent();
 			numThreads = document.getElementsByTagName("numThreads").item(0).getTextContent();
 			blockSizeMB = document.getElementsByTagName("blockSizeMB").item(0).getTextContent();
+			interleave = document.getElementsByTagName("interleave").item(0).getTextContent();
 			
 			startTime = System.currentTimeMillis();
 		}
@@ -120,6 +122,11 @@ public class Configuration implements Serializable
 	public String getBlockSizeMB()
 	{
 		return blockSizeMB;
+	}
+	
+	public String getInterleave()
+	{
+		return interleave;
 	}
 		
 	public Long getStartTime()
