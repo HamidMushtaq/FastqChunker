@@ -16,7 +16,6 @@ class PairedFastqChunker(config: Configuration)
 	val interleave = config.getInterleave.toBoolean
 	
 	val readContent = new Array[ByteArray](nThreads)
-	val bytesRead = new Array[Int](nThreads)
 	val chunkCtr = new Array[Int](nThreads)
 	val iterCtr = new Array[Int](nThreads)
 	
@@ -37,10 +36,12 @@ class PairedFastqChunker(config: Configuration)
 			gzipOutStreams(ti+nThreads) = new GZIPOutputStream1(new ByteArrayOutputStream(bufferSize), compLevel)
 		}
 		readContent(ti) = new ByteArray(2*bufferSize*2)
+		chunkCtr(ti) = ti
 	}
 	
 	def makeChunks()
 	{	
+		val bytesRead = new Array[Int](nThreads)
 		// for fastq1 ////////////////////////////////////////////////////////////
 		val fis1 = new FileInputStream(new File(inputFileName1))
 		val gis1 = if (inputFileName2.contains(".gz")) new GZIPInput (fis1, bufferSize) else null
@@ -49,7 +50,6 @@ class PairedFastqChunker(config: Configuration)
 		// Double buffer
 		val bArrayArrayBuf1 = new Array[Array[ByteArray]](2)
 		var leftOver1: ByteArray = null
-		
 		// for fastq2 ////////////////////////////////////////////////////////////
 		val fis2 = new FileInputStream(new File(inputFileName2))
 		val gis2 = if (inputFileName2.contains(".gz")) new GZIPInput (fis2, bufferSize) else null
@@ -152,8 +152,8 @@ class PairedFastqChunker(config: Configuration)
 						
 						bArrayArray1(index).synchronized
 						{
-							splitOnReadBoundary(bArray1, bArrayArray1(index), leftOver1)
-							splitOnReadBoundary(bArray2, bArrayArray2(index), leftOver2)
+							ReadBoundarySplitter.split(bArray1, bArrayArray1(index), leftOver1)
+							ReadBoundarySplitter.split(bArray2, bArrayArray2(index), leftOver2)
 						}
 						//println((startIndex + index) + " -> bArrayArray1.size = " + bArrayArray1(index).getLen + ", leftOver1.size = " + leftOver1.getLen)
 						//println((startIndex + index) + " -> bArrayArray2.size = " + bArrayArray2(index).getLen + ", leftOver2.size = " + leftOver2.getLen)
@@ -324,55 +324,6 @@ class PairedFastqChunker(config: Configuration)
 				startIndex = index+1
 			}
 		}
-	}
-	
-	private def splitOnReadBoundary(byteArray: ByteArray, retArray: ByteArray, leftOver: ByteArray)
-	{
-		val ba = byteArray.getArray
-		val baSize = byteArray.getLen
-		var ei = baSize-1
-		var lastByte = ba(ei)
-		var secLastByte = ba(ei-1)
-		var numOfNewLines = 0
-		
-		try
-		{
-			// Find "\n+" first
-			while(!(lastByte == '\n' && secLastByte == '+'))
-			{
-				ei -= 1
-				lastByte = ba(ei)
-				secLastByte = ba(ei-1)
-			}
-			
-			numOfNewLines = 0
-			ei -= 1
-			while(numOfNewLines < 3)
-			{
-				if (ei < 0)
-				{
-					retArray.copyFrom(ba, 0, 0)
-					leftOver.copyFrom(ba, 0, baSize)
-				}
-				if (ba(ei) == '\n')
-					numOfNewLines += 1
-				ei -=1 // At the end, this would be the index of character just before '\n'
-			}
-		}
-		catch 
-		{
-			case e: Exception => 
-			{
-				println("ba.size = " + baSize)
-				println("ei = " + ei)
-				println("numOfNewLines = " + numOfNewLines)
-				println("\n>> Exception: " + ExceptionUtils.getStackTrace(e) + "!!!\n") 
-				System.exit(1)
-			}
-		}
-		
-		retArray.copyFrom(ba, 0, ei+2)
-		leftOver.copyFrom(ba, ei+2, baSize - (ei+2))
 	}
 	
 	private def getReadAndHeaderLength() : (Int, Int) = 

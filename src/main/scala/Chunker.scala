@@ -1,5 +1,5 @@
 /****************************************/
-//	Program:	DNASeqAnalyzer.scala	
+//	Program:	Chunker.scala	
 //	Author:		Hamid Mushtaq  		
 //	Company:	TU Delft	 	
 /****************************************/
@@ -28,13 +28,10 @@ object Chunker
 		Logger.getLogger("org").setLevel(Level.OFF);
 		Logger.getLogger("akka").setLevel(Level.OFF);
 		
-		if (config.getFastq2Path != "")
+		if (config.getFastq2Path.trim != "")
 			new PairedFastqChunker(config).makeChunks
 		else
-		{
-			println("Single Fastq chunking not supported yet!")
-			System.exit(1)
-		}	
+			new SingleFastqChunker(config).makeChunks
 		println(">> Execution time: " + ((System.currentTimeMillis - t0) / 1000) + " secs")
 	}
 //////////////////////////////////////////////////////////////////////////////
