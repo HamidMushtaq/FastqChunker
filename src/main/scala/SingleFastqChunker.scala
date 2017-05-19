@@ -13,16 +13,18 @@ class SingleFastqChunker(config: Configuration)
 	val bufferSize = config.getBlockSizeMB.toInt * 1024 * 1024
 	val chunkSize: Int = config.getChunkSizeMB.toInt * 1024 * 1024
 	val compLevel = config.getCompLevel.toInt
-	val interleave = config.getInterleave.toBoolean
 	val inputFileName = config.getFastq1Path
 	val outputFolder = config.getOutputFolder
+	final val MIN_ZIP_FILE_SIZE = 22
 
-	val gzipOutStreams = new Array[GZIPOutputStream1](nThreads)
 	val chunkCtr = new Array[Int](nThreads)
+	val gzipOutStreams = new Array[GZIPOutputStream1](nThreads)
+	val baFuture = new Array[ByteArray](nThreads)
 	for(ti <- 0 until nThreads)
 	{
-		gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream(bufferSize*2), compLevel)
 		chunkCtr(ti) = ti
+		gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream, compLevel)
+		baFuture(ti) = new ByteArray(bufferSize*2)
 	}
 	
 	def makeChunks()
@@ -32,35 +34,23 @@ class SingleFastqChunker(config: Configuration)
 		val tmpBufferArray = new Array[Byte](bufferSize)
 		val bytesRead = new Array[Int](nThreads)
 		val bArray = new ByteArray(bufferSize*2)
-		// Double buffer
-		val bArrayArrayBuf = new Array[Array[ByteArray]](2)
+		val bArrayArray = new Array[ByteArray](nThreads)
 		var leftOver: ByteArray = null
 		
 		val t0 = System.currentTimeMillis
 		
-		// Both elements of the double buffer contain a ByteArray for each thread
-		for(i <- 0 until 2)
-			bArrayArrayBuf(i) = new Array[ByteArray](nThreads)
-			
-		var bArrayArray = bArrayArrayBuf(0)
+		for(ti <- 0 until nThreads)
+			bArrayArray(ti) = new ByteArray(bufferSize*2)
 		
-		val startTime = System.currentTimeMillis
 		var startIndex = 0
-		var et: Long = 0
 		var endReached = false
 		var iter = 0
-		var dbi = 0
+		var totalBytesRead: Long = 0
 		///
-		val readTime = new SWTimer
-		val uploadTime = new SWTimer
-		var f: Seq[Future[(Int, Int)]] = null
+		val f = new Array[Future[Unit]](nThreads)
 	
 		while(!endReached)
-		{
-			val etGlobal = (System.currentTimeMillis - t0) / 1000
-			val et = (System.currentTimeMillis - startTime) / 1000
-			println(">> elapsed time = " + et + ", global elapsed time = " + etGlobal)
-			readTime.start
+		{		
 			for(index <- 0 until nThreads)
 			{
 				if (endReached) // This condition will be reached for eg. when end was reached (if bytesRead(index) == -1) on index = 7, and now index > 7.
@@ -89,12 +79,6 @@ class SingleFastqChunker(config: Configuration)
 						{
 							bArray.copyFrom(tmpBufferArray, 0, bytesRead(index))
 							leftOver = new ByteArray(bufferSize)
-							
-							for(i <- 0 until nThreads)
-							{
-								for(e <- 0 until 2)
-									bArrayArrayBuf(e)(i) = new ByteArray(bufferSize*2)
-							}
 						}
 						else // Not the first ever iteration -> !(iter == 0 && index == 0)
 						{
@@ -102,90 +86,122 @@ class SingleFastqChunker(config: Configuration)
 							bArray.append(tmpBufferArray, 0, bytesRead(index))
 						}
 						
-						bArrayArray(index).synchronized
-						{
-							ReadBoundarySplitter.split(bArray, bArrayArray(index), leftOver)
-						}
-						println((startIndex + index) + " -> bArrayArray.size = " + bArrayArray(index).getLen + ", leftOver.size = " + leftOver.getLen)
+						splitAtReadBoundary(bArray, bArrayArray(index), leftOver)
+						totalBytesRead += bArrayArray(index).getLen
 					}
 				}
+				//////////////////////////////////////////////////////////////
+				if (f(index) != null)
+					Await.result(f(index), Duration.Inf)
+				gzipOutStreams(index).synchronized
+				{
+					if (bArrayArray(index) == null)
+						baFuture(index).setLen(0)
+					else
+						baFuture(index).copyFrom(bArrayArray(index))
+				}
+				f(index) = Future {
+					gzipOutStreams(index).synchronized
+					{
+						writeChunk(index)
+					}
+				}
+				//////////////////////////////////////////////////////////////
 			}
 			
-			println("End reached = " + endReached)
-			println(iter + ". Read all " + nThreads + " chunks in the bArrayArray, in " + ((System.currentTimeMillis - t0) / 1000) + " secs.")
-			readTime.stop
-			uploadTime.start
-			///////////////////////////////////////////////////////////////////////////////////////
-			if (f != null)
-			{
-				val r: Seq[(Int, Int)] = Await.result(Future.sequence(f), Duration.Inf)
-				println("r: " + r)
-			}
-			f = for (ti <- 0 until nThreads) yield Future {
-				val ret = {
-					gzipOutStreams(ti).synchronized
-					{
-						writeChunk(bArrayArray(ti), ti, endReached)
-					}
-				}
-				ret
-			}
-			//////////////////////////////////////////////////////////////////////////////////////
-			uploadTime.stop
-			println(iter + ". Uploaded all " + nThreads + " chunks to " + outputFolder + " in " + ((System.currentTimeMillis - t0) / 1000) + " secs.")
-			println(iter + ". Read time = " + readTime.getSecsF + ", UPLOAD time = " + uploadTime.getSecsF)
+			val et = ((System.currentTimeMillis - t0) / 1000)
+			println(s"$iter. Read ${totalBytesRead.toFloat / (1024 * 1024 * 1024)} GBs in ${et / 60} mins ${et % 60} secs.")
 			iter += 1
 			startIndex += nThreads
-			dbi ^= 1
-			bArrayArray = bArrayArrayBuf(dbi)
+		}
+		println("Writing the last remaining bytes...")
+		for(ti <- 0 until nThreads)
+		{
+			var et = (System.currentTimeMillis - t0) / 1000
+			Await.result(f(ti), Duration.Inf)
+			et = (System.currentTimeMillis - t0) / 1000
+			gzipOutStreams(ti).close
+			if (gzipOutStreams(ti).getSize > MIN_ZIP_FILE_SIZE)
+			{
+				HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
+				val s = "ti: " + ti + ", " + gzipOutStreams(ti).getSize + " bytes\n"
+				HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
+			}
 		}
 		// Wait for the last iteration to complete
-		val r: Seq[(Int, Int)] = Await.result(Future.sequence(f), Duration.Inf)
-		println("r: " + r)
 		if (gis != null)
 			gis.close
 		else
 			fis.close
 		HDFSManager.writeWholeFile(outputFolder + "/ulStatus/end.txt", "")
+		println("All chunks have been uploaded!")
 	}
 
-	private def writeChunk(bArray: ByteArray, ti: Int, endReached: Boolean) : (Int, Int) =
+	private def writeChunk(ti: Int)
 	{
-		var r: (Int, Int) = (0,0)
-		
-		if ((bArray != null) && (bArray.getLen > 1))
+		if (baFuture(ti).getLen != 0)
 		{
-			bArray.synchronized
-			{
-				gzipOutStreams(ti).write(bArray.getArray, 0, bArray.getLen)
-			}
-			gzipOutStreams(ti).flush
+			gzipOutStreams(ti).write(baFuture(ti).getArray, 0, baFuture(ti).getLen)
 			val numOfBytes = gzipOutStreams(ti).getSize 
-			r = (chunkCtr(ti), numOfBytes / 1e6.toInt) 
-			if ((numOfBytes > chunkSize) || endReached)
+			if (numOfBytes > chunkSize)
 			{
-				val os = gzipOutStreams(ti).getOutputStream
 				gzipOutStreams(ti).close
 				HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
-				val s = "ti: " + ti + ", " + (numOfBytes / 1e6.toInt).toString + " MB\n"
+				val s = "ti: " + ti + ", " + (numOfBytes / 1e6.toInt) + " MB\n"
 				HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
-				if (!endReached)
-				{
-					os.reset
-					gzipOutStreams(ti) = new GZIPOutputStream1(os, compLevel)
-					chunkCtr(ti) += nThreads
-				}
-			}							
+			
+				chunkCtr(ti) += nThreads
+				gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream, compLevel)
+			}
 		}
-		else if (endReached)
+	}
+	
+	protected def splitAtReadBoundary(byteArray: ByteArray, retArray: ByteArray, leftOver: ByteArray)
+	{
+		val ba = byteArray.getArray
+		val baSize = byteArray.getLen
+		var ei = baSize-1
+		var lastByte = ba(ei)
+		var secLastByte = ba(ei-1)
+		var numOfNewLines = 0
+		
+		try
 		{
-			val numOfBytes = gzipOutStreams(ti).getSize 
-			gzipOutStreams(ti).close
-			HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
-			val s = "ti: " + ti + ", " + (numOfBytes / 1e6.toInt).toString + " MB\n"
-			HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
-			r = (chunkCtr(ti), numOfBytes / 1e6.toInt)
+			// Find "\n+" first
+			while(!(lastByte == '\n' && secLastByte == '+'))
+			{
+				ei -= 1
+				lastByte = ba(ei)
+				secLastByte = ba(ei-1)
+			}
+			
+			numOfNewLines = 0
+			ei -= 1
+			while(numOfNewLines < 3)
+			{
+				if (ei < 0)
+				{
+					retArray.copyFrom(ba, 0, 0)
+					leftOver.copyFrom(ba, 0, baSize)
+				}
+				if (ba(ei) == '\n')
+					numOfNewLines += 1
+				ei -=1 // At the end, this would be the index of character just before '\n'
+			}
 		}
-		r
+		catch 
+		{
+			case e: Exception => 
+			{
+				println("ba.size = " + baSize)
+				println("ei = " + ei)
+				println("numOfNewLines = " + numOfNewLines)
+				println("\n>> Exception: " + ExceptionUtils.getStackTrace(e) + "!!!\n") 
+				System.exit(1)
+			}
+		}
+		
+		retArray.copyFrom(ba, 0, ei+2)
+		leftOver.copyFrom(ba, ei+2, baSize - (ei+2))
 	}
 }
