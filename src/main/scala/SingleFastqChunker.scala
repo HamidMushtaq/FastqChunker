@@ -24,7 +24,6 @@ class SingleFastqChunker(config: Configuration)
 	{
 		chunkCtr(ti) = ti
 		gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream, compLevel)
-		baFuture(ti) = new ByteArray(bufferSize*2)
 	}
 	
 	def makeChunks()
@@ -40,7 +39,10 @@ class SingleFastqChunker(config: Configuration)
 		val t0 = System.currentTimeMillis
 		
 		for(ti <- 0 until nThreads)
+		{
+			baFuture(ti) = new ByteArray(bufferSize*2)
 			bArrayArray(ti) = new ByteArray(bufferSize*2)
+		}
 		
 		var startIndex = 0
 		var endReached = false

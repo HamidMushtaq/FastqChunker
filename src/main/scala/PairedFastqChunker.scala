@@ -11,12 +11,9 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 {
 	val interleave = config.getInterleave.toBoolean
 	val inputFileName2 = config.getFastq2Path
-	
-	val (minHeaderLength, readLength) = getReadAndHeaderLength()
-
 	val gzipOutStreams2 = if (interleave) null else new Array[GZIPOutputStream1](nThreads)
-	for(ti <- 0 until nThreads)
-		gzipOutStreams2(ti) = new GZIPOutputStream1(new ByteArrayOutputStream, compLevel)
+	val baFuture2 = new Array[ByteArray](nThreads)
+	val (minHeaderLength, readLength) = getReadAndHeaderLength()
 	
 	override def makeChunks()
 	{	
@@ -39,10 +36,14 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 		
 		val t0 = System.currentTimeMillis
 		
-		for(i <- 0 until nThreads)
+		for(ti <- 0 until nThreads)
 		{
-			bArrayArray1(i) = new ByteArray(bufferSize*2)
-			bArrayArray2(i) = new ByteArray(bufferSize*2)					
+			baFuture(ti) = new ByteArray(bufferSize*2)
+			baFuture2(ti) = new ByteArray(bufferSize*2)
+			bArrayArray1(ti) = new ByteArray(bufferSize*2)
+			bArrayArray2(ti) = new ByteArray(bufferSize*2)
+			if (!interleave)
+				gzipOutStreams2(ti) = new GZIPOutputStream1(new ByteArrayOutputStream, compLevel)
 		}
 		
 		var startIndex = 0
@@ -50,9 +51,7 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 		var iter = 0
 		var totalBytesRead: Long = 0
 	
-		val f = new Array[scala.collection.mutable.ArrayBuffer[Future[Unit]]](nThreads)
-		for(ti <- 0 until nThreads)
-			f(ti) = new scala.collection.mutable.ArrayBuffer[Future[Unit]]
+		val f = new Array[Future[Unit]](nThreads)
 	
 		while(!endReached)
 		{
@@ -111,17 +110,32 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 						totalBytesRead += 2*bArrayArray1(index).getLen
 					}
 				}
-				val baFuture1 = if (bArrayArray1(index) == null) null else bArrayArray1(index).copyBytes
-				val baFuture2 = if (bArrayArray2(index) == null) null else bArrayArray2(index).copyBytes
-				f(index).append(Future {
+				//////////////////////////////////////////////////////////////
+				if (f(index) != null)
+					Await.result(f(index), Duration.Inf)
+				gzipOutStreams(index).synchronized
+				{
+					if (bArrayArray1(index) == null)
+					{
+						baFuture(index).setLen(0)
+						baFuture2(index).setLen(0)
+					}
+					else
+					{
+						baFuture(index).copyFrom(bArrayArray1(index))
+						baFuture2(index).copyFrom(bArrayArray2(index))
+					}
+				}
+				f(index) = Future {
 					gzipOutStreams(index).synchronized
 					{
 						if (interleave)
-							writeInterleavedChunk(baFuture1, baFuture2, index)
+							writeInterleavedChunk(index)
 						else
-							writePairedChunks(baFuture1, baFuture2, index)
+							writePairedChunks(index)
 					}
-				})
+				}
+				//////////////////////////////////////////////////////////////
 			}
 			
 			val et = ((System.currentTimeMillis - t0) / 1000)
@@ -129,20 +143,18 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 			iter += 1
 			startIndex += nThreads
 		}
+		println("Writing the last remaining bytes...")
 		for(ti <- 0 until nThreads)
 		{
 			var et = (System.currentTimeMillis - t0) / 1000
-			println("Waiting for all " + f(ti).size + " futures of thread " + ti + " to complete. Elapsed time = " + et + " secs")
-			for(e <- f(ti))
-				Await.result(e, Duration.Inf)
+			Await.result(f(ti), Duration.Inf)
 			et = (System.currentTimeMillis - t0) / 1000
-			println("All futures of thread " + ti + " are completed! Elapsed time = " + et + " secs")
 			gzipOutStreams(ti).close
 			if (!interleave)
 				gzipOutStreams2(ti).close
 			if (gzipOutStreams(ti).getSize > MIN_ZIP_FILE_SIZE)
 			{
-				if (!interleave)
+				if (interleave)
 					HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
 				else
 				{
@@ -153,6 +165,7 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 				HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
 			}
 		}
+		// Wait for the last iteration to complete
 		if (gis1 != null)
 		{
 			gis1.close
@@ -166,11 +179,11 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 		HDFSManager.writeWholeFile(outputFolder + "/ulStatus/end.txt", "")
 	}
 
-	private def writeInterleavedChunk(bArray1: Array[Byte], bArray2: Array[Byte], ti: Int)
+	private def writeInterleavedChunk(ti: Int)
 	{
-		if (bArray1 != null)
+		if (baFuture(ti).getLen != 0)
 		{
-			gzipOutStreams(ti).write(interleave(bArray1, bArray2))
+			gzipOutStreams(ti).write(interleave(baFuture(ti), baFuture2(ti)))
 			val numOfBytes = gzipOutStreams(ti).getSize 
 			if (numOfBytes > chunkSize)
 			{
@@ -185,12 +198,12 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 		}
 	}
 	
-	private def writePairedChunks(bArray1: Array[Byte], bArray2: Array[Byte], ti: Int)
+	private def writePairedChunks(ti: Int)
 	{
-		if (bArray1 != null)
+		if (baFuture(ti).getLen != 0)
 		{
-			gzipOutStreams(ti).write(bArray1)
-			gzipOutStreams2(ti).write(bArray2)
+			gzipOutStreams(ti).write(baFuture(ti).getArray, 0, baFuture(ti).getLen)
+			gzipOutStreams2(ti).write(baFuture2(ti).getArray, 0, baFuture2(ti).getLen)
 			val numOfBytes = gzipOutStreams(ti).getSize 
 			if (numOfBytes > chunkSize)
 			{
@@ -208,14 +221,14 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 		}
 	}
 	
-	private def interleave(ba1: Array[Byte], ba2: Array[Byte]) : Array[Byte] =
+	private def interleave(ba1: ByteArray, ba2: ByteArray) : Array[Byte] =
 	{
 		var startIndex = 0
 		var rIndex = 0
 		var index = 0
 		var done = false
 		val stride = readLength*2 + minHeaderLength - 10 // -10 to take care of anamolous data
-		val interleavedContent = new Array[Byte](ba1.size*2)
+		val interleavedContent = new Array[Byte](ba1.getLen*2)
 		
 		while(index != -1)
 		{
@@ -223,9 +236,9 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 			if (index != -1)
 			{
 				val numOfElem = index - startIndex + 1
-				System.arraycopy(ba1, startIndex, interleavedContent, rIndex, numOfElem)
+				System.arraycopy(ba1.getArray, startIndex, interleavedContent, rIndex, numOfElem)
 				rIndex += numOfElem
-				System.arraycopy(ba2, startIndex, interleavedContent, rIndex, numOfElem)
+				System.arraycopy(ba2.getArray, startIndex, interleavedContent, rIndex, numOfElem)
 				rIndex += numOfElem
 				
 				startIndex = index+1
