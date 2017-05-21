@@ -44,7 +44,7 @@ if SAVE_EXEC_TIME:
 	timingsFileName = "timings.txt"
 	if not os.path.exists(timingsFileName):
 		f = open(timingsFileName,'w')
-		f.write("%Config file\tTime in secs\tTime in mins:secs\n")
+		f.write("%Config file\tTime in secs\tTime in mins:secs\n\n")
 		f.close
 	f = open(timingsFileName,'a+')
 	f.write(sys.argv[2] + "\t" + str(time_in_secs) + "\t" + str(mins) + ":" + str(secs) + "\n")
