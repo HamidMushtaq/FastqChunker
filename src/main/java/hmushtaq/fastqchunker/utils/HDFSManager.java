@@ -3,7 +3,7 @@
 //	Author:		Hamid Mushtaq  		
 //	Company:	TU Delft	 	
 /****************************************/
-package utils;
+package hmushtaq.fastqchunker.utils;
 
 import org.apache.hadoop.conf.*;
 import org.apache.hadoop.fs.*;

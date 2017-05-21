@@ -3,7 +3,7 @@
 //	Author:		Hamid Mushtaq  		
 //	Company:	TU Delft	 	
 /****************************************/
-package utils;
+package hmushtaq.fastqchunker.utils;
 
 import java.util.zip.GZIPOutputStream;
 import java.io.*;

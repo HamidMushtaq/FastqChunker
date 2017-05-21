@@ -3,6 +3,8 @@
 //	Author:		Hamid Mushtaq  		
 //	Company:	TU Delft	 	
 /****************************************/
+package hmushtaq.fastqchunker
+
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
@@ -11,7 +13,8 @@ import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
 
-import utils._
+import hmushtaq.fastqchunker.chunkers._
+import hmushtaq.fastqchunker.utils.Configuration
 
 object Chunker
 {

@@ -9,14 +9,16 @@ import sys
 import os
 import time
 
-exeName	= "target/scala-2.11/chunker_2.11-1.0.jar"
+SAVE_EXEC_TIME = True
 
-if len(sys.argv) < 2:
+if len(sys.argv) < 3:
 	print("Not enough arguments!")
-	print("Example of usage: ./run.py config.xml")
+	print("Example of usage: ./run.py chunker_2.11-1.0.jar config.xml")
 	sys.exit(1)
 
-doc = minidom.parse(sys.argv[1])
+exeName	= sys.argv[1]
+configFile = sys.argv[2]
+doc = minidom.parse(configFile)
 inputFileName = doc.getElementsByTagName("fastq1Path")[0].firstChild.data
 fastq2Path = doc.getElementsByTagName("fastq2Path")[0].firstChild
 inputFileName2 = "" if (fastq2Path == None) else fastq2Path.data
@@ -25,7 +27,7 @@ driver_mem = doc.getElementsByTagName("driverMemGB")[0].firstChild.data + "g"
 
 def run():
 	cmdStr = "$SPARK_HOME/bin/spark-submit " + \
-	"--class \"Chunker\" --master local[*] --driver-memory " + driver_mem + " " + exeName + " " + sys.argv[1]
+	"--class \"hmushtaq.fastqchunker.Chunker\" --master local[*] --driver-memory " + driver_mem + " " + exeName + " " + configFile
 	
 	print cmdStr
 	os.system(cmdStr)
@@ -38,7 +40,12 @@ time_in_secs = int(time.time() - start_time)
 mins = time_in_secs / 60
 secs = time_in_secs % 60
 print "||| Time taken = " + str(mins) + " mins " + str(secs) + " secs |||"
-# Save the results to file
-f = open("results.txt",'a+')
-f.write(str(time_in_secs) + "\t" + str(mins) + "\t" + str(secs) + "\n")
-f.close() 
+if SAVE_EXEC_TIME:
+	timingsFileName = "timings.txt"
+	if not os.path.exists(timingsFileName):
+		f = open(timingsFileName,'w')
+		f.write("%Config file\tTime in secs\tTime in mins:secs\n")
+		f.close
+	f = open(timingsFileName,'a+')
+	f.write(sys.argv[2] + "\t" + str(time_in_secs) + "\t" + str(mins) + ":" + str(secs) + "\n")
+	f.close() 

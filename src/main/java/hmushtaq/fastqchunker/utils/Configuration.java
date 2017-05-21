@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package utils;
+package hmushtaq.fastqchunker.utils;
 
 import java.io.File;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -29,6 +29,7 @@ public class Configuration implements Serializable
 	private String fastq1Path;
 	private String fastq2Path;
 	private String outputFolder;
+	private boolean outputFolderIsLocal;
 	private String compLevel;
 	private String chunkSizeMB;
 	private String driverMemGB;
@@ -50,6 +51,9 @@ public class Configuration implements Serializable
 			fastq1Path = document.getElementsByTagName("fastq1Path").item(0).getTextContent();
 			fastq2Path = document.getElementsByTagName("fastq2Path").item(0).getTextContent();
 			outputFolder = correctFolderName(document.getElementsByTagName("outputFolder").item(0).getTextContent());
+			outputFolderIsLocal =  outputFolder.startsWith("local:");
+			if (outputFolderIsLocal)
+				outputFolder = outputFolder.substring(6);
 			compLevel = document.getElementsByTagName("compLevel").item(0).getTextContent();
 			chunkSizeMB = document.getElementsByTagName("chunkSizeMB").item(0).getTextContent();
 			driverMemGB = document.getElementsByTagName("driverMemGB").item(0).getTextContent();
@@ -99,6 +103,11 @@ public class Configuration implements Serializable
 		return outputFolder;
 	}
 	
+	public boolean getOutputFolderIsLocal()
+	{
+		return outputFolderIsLocal;
+	}
+	
 	public String getCompLevel()
 	{
 		return compLevel;
@@ -140,6 +149,7 @@ public class Configuration implements Serializable
 		System.out.println("1. fastq1Path:\t" + fastq1Path);
 		System.out.println("2. fastq2Path:\t" + fastq2Path);
 		System.out.println("3. outputFolder:\t" + outputFolder);
+		System.out.println("\toutputFolderIsLocal:\t" + outputFolderIsLocal);
 		System.out.println("4. compLevel:\t" + compLevel);
 		System.out.println("5. chunkSizeMB:\t" + chunkSizeMB);
 		System.out.println("6. driverMemGB:\t" + driverMemGB);

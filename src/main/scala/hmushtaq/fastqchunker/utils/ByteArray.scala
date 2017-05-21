@@ -1,4 +1,4 @@
-package utils
+package hmushtaq.fastqchunker.utils;
 
 import org.apache.commons.lang3.exception.ExceptionUtils
 

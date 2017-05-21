@@ -1,3 +1,5 @@
+package hmushtaq.fastqchunker.chunkers
+
 import org.apache.commons.lang3.exception.ExceptionUtils
 import sys.process._
 import scala.concurrent.{Await, Future}
@@ -5,15 +7,15 @@ import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 import java.util.zip.GZIPInputStream
 import java.io._
-import utils._
+import hmushtaq.fastqchunker.utils._
 	
 class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(config)
 {
-	val interleave = config.getInterleave.toBoolean
-	val inputFileName2 = config.getFastq2Path
-	val gzipOutStreams2 = if (interleave) null else new Array[GZIPOutputStream1](nThreads)
-	val baFuture2 = new Array[ByteArray](nThreads)
-	val (minHeaderLength, readLength) = getReadAndHeaderLength()
+	protected val interleave = config.getInterleave.toBoolean
+	protected val inputFileName2 = config.getFastq2Path
+	protected val gzipOutStreams2 = if (interleave) null else new Array[GZIPOutputStream1](nThreads)
+	protected val baFuture2 = new Array[ByteArray](nThreads)
+	protected val (minHeaderLength, readLength) = getReadAndHeaderLength()
 	
 	override def makeChunks()
 	{	
@@ -162,7 +164,7 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 					HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-2.fq.gz", gzipOutStreams2(ti).getByteArray)
 				}
 				val s = "ti: " + ti + ", " + gzipOutStreams(ti).getSize + " bytes\n"
-				HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
+				writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
 			}
 		}
 		// Wait for the last iteration to complete
@@ -176,7 +178,7 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 			fis1.close
 			fis2.close
 		}
-		HDFSManager.writeWholeFile(outputFolder + "/ulStatus/end.txt", "")
+		writeWholeFile(outputFolder + "/ulStatus/end.txt", "")
 	}
 
 	private def writeInterleavedChunk(ti: Int)
@@ -188,9 +190,9 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 			if (numOfBytes > chunkSize)
 			{
 				gzipOutStreams(ti).close
-				HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
+				writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
 				val s = "ti: " + ti + ", " + (numOfBytes / 1e6.toInt).toString + " MB\n"
-				HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
+				writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
 				
 				chunkCtr(ti) += nThreads
 				gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream, compLevel)
@@ -209,10 +211,10 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 			{
 				gzipOutStreams(ti).close
 				gzipOutStreams2(ti).close
-				HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-1.fq.gz", gzipOutStreams(ti).getByteArray)
-				HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-2.fq.gz", gzipOutStreams2(ti).getByteArray)
+				writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-1.fq.gz", gzipOutStreams(ti).getByteArray)
+				writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-2.fq.gz", gzipOutStreams2(ti).getByteArray)
 				val s = "ti: " + ti + ", " + (numOfBytes / 1e6.toInt).toString + " MB\n"
-				HDFSManager.writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
+				writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
 				
 				chunkCtr(ti) += nThreads
 				gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream, compLevel)
