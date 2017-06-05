@@ -1,0 +1,7 @@
+/compileWin.bat
+/project
+/compileLog.txt
+/target/streams
+/target/resolution-cache
+/target/scala-2.11/classes
+/target/scala-2.11/chunker_2.11-1.0.jar
