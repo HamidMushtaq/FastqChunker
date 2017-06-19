@@ -208,16 +208,18 @@ class SingleFastqChunker(config: Configuration)
 		var ei = baSize-1
 		var lastByte = ba(ei)
 		var secLastByte = ba(ei-1)
+		var thirdLastByte = ba(ei-2)
 		var numOfNewLines = 0
 		
 		try
 		{
-			// Find "\n+" first
-			while(!(lastByte == '\n' && secLastByte == '+'))
+			// Find "\n+\n" first
+			while(!(lastByte == '\n' && secLastByte == '+' && thirdLastByte == '\n'))
 			{
 				ei -= 1
 				lastByte = ba(ei)
 				secLastByte = ba(ei-1)
+				thirdLastByte = ba(ei-2)
 			}
 			
 			numOfNewLines = 0
