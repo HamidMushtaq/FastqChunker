@@ -56,8 +56,8 @@ public class HDFSManager
 		}
 		catch (IOException ex) 
 		{
-            ex.printStackTrace();
-        }
+			ex.printStackTrace();
+		}
 	}
 	
 	public static boolean exists(String fname)
@@ -76,9 +76,9 @@ public class HDFSManager
 		}
 		catch (IOException ex) 
 		{
-            ex.printStackTrace();
+			ex.printStackTrace();
 			return false;
-        }
+		}
 	}
 	
 	public static void append(String fname, String s)
@@ -109,9 +109,9 @@ public class HDFSManager
 		}
 		catch (IOException ex) 
 		{
-            ex.printStackTrace();
+			ex.printStackTrace();
 			return "";
-        }
+		}
 	}
 	
 	public static String readPartialFile(String fname, int bytes)
@@ -134,9 +134,9 @@ public class HDFSManager
 		}
 		catch (IOException ex) 
 		{
-            ex.printStackTrace();
+			ex.printStackTrace();
 			return "IOException!";
-        }
+		}
 	}
 	
 	public static void writeWholeFile(String fname, String s)
@@ -163,8 +163,8 @@ public class HDFSManager
 		}
 		catch (IOException ex) 
 		{
-            ex.printStackTrace();
-        }
+			ex.printStackTrace();
+		}
 	}
 	
 	public static PrintWriter openWriter(String fname) throws Exception
@@ -205,8 +205,8 @@ public class HDFSManager
 		}
 		catch (IOException ex) 
 		{
-            ex.printStackTrace();
-        }
+			ex.printStackTrace();
+		}
 	}
 	
 	public static void remove(String fname)
@@ -222,8 +222,8 @@ public class HDFSManager
 		}
 		catch (IOException ex) 
 		{
-            ex.printStackTrace();
-        }
+			ex.printStackTrace();
+		}
 	}
 
 	public static int download(String fileName, String hdfsFolder, String localFolder, boolean overwrite)

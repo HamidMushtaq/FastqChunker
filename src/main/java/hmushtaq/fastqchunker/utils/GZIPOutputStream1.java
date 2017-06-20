@@ -34,19 +34,19 @@ public class GZIPOutputStream1 extends GZIPOutputStream
 	
 	public GZIPOutputStream1(ByteArrayOutputStream out, int compressLevel) throws IOException 
 	{
-        super(out, true);
+		super(out, true);
 		def.setLevel(compressLevel);
 		outputStream = out;
 		this.compressLevel = compressLevel;
-    } 
+	} 
 	
 	public GZIPOutputStream1(ByteArrayOutputStream out) throws IOException 
 	{
-        super(out, true);
+		super(out, true);
 		def.setLevel(DEFAULT_COMPRESS_LEVEL);
 		outputStream = out;
 		this.compressLevel = DEFAULT_COMPRESS_LEVEL;
-    }
+	}
 	
 	public int getCompressLevel()
 	{

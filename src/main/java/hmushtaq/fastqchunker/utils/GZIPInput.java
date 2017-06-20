@@ -39,14 +39,14 @@ public class GZIPInput
 	
 	public GZIPInput(FileInputStream fis, int bufferSize) throws IOException 
 	{
-        gzi = new GZIPInputStream(fis, bufferSize);
+		gzi = new GZIPInputStream(fis, bufferSize);
 		this.bufferSize = bufferSize;
 		this.fis = fis;
 		remBuffer = new byte[bufferSize];
 		readBuffer = new byte[bufferSize];
 		buffer = new byte[2*bufferSize];
 		remBufferLen = 0;
-    } 
+	} 
 	
 	public int read(byte[] rBuffer)
 	{
