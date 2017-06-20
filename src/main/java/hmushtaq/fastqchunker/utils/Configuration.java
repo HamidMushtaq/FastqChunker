@@ -24,6 +24,10 @@ import java.io.Serializable;
 import java.lang.System;
 import java.util.*;
 
+/**
+ *
+ * @author Hamid Mushtaq
+ */
 public class Configuration implements Serializable
 {
 	private String fastq1Path;

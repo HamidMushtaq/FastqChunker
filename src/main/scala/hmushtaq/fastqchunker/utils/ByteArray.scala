@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Hamid Mushtaq, TU Delft
+ * Copyright (C) 2017 TU Delft, The Netherlands
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -13,12 +13,19 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * Authors: Hamid Mushtaq
+ *
  */
 package hmushtaq.fastqchunker.utils;
 
 import org.apache.commons.lang3.exception.ExceptionUtils
 
-// A wrapper for Array[Byte] with reserved size
+/**
+ * A wrapper for Array[Byte] with reserved size
+ *
+ * @author Hamid Mushtaq
+ */
 class ByteArray(bufSize: Int)
 {
 	private var bufLen = 0

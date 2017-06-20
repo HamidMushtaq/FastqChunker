@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Hamid Mushtaq, TU Delft
+ * Copyright (C) 2017 TU Delft, The Netherlands
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -13,6 +13,9 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * Authors: Hamid Mushtaq
+ *
  */
 package hmushtaq.fastqchunker.utils;
 
@@ -26,6 +29,10 @@ import java.net.*;
 import java.lang.*;
 import java.nio.charset.Charset;
 
+/**
+ *
+ * @author Hamid Mushtaq
+ */
 public class HDFSManager
 {
 	private final static boolean DISABLE_CACHE = false;
@@ -160,7 +167,7 @@ public class HDFSManager
         }
 	}
 	
-	public static PrintWriter openStream(String fname) throws Exception
+	public static PrintWriter openWriter(String fname) throws Exception
 	{
 		org.apache.hadoop.conf.Configuration config = new org.apache.hadoop.conf.Configuration();
 		if (DISABLE_CACHE)
@@ -218,40 +225,7 @@ public class HDFSManager
             ex.printStackTrace();
         }
 	}
-	
-	public String getLS(String dir, boolean showHidden)
-	{
-		try
-		{
-			File folder = new File(dir);
-			File[] listOfFiles = folder.listFiles();
-			String lenStr = Integer.toString(listOfFiles.length);
-			String str = "";
-			
-			InetAddress IP = InetAddress.getLocalHost();
-			String hostName = IP.toString();
-			
-			for (int i = 0; i < listOfFiles.length; i++) 
-			{
-				if (listOfFiles[i].isFile())
-				{
-					if (!(listOfFiles[i].isHidden() && !showHidden))
-						str = str + String.format("%s\t%s\n", getSizeString(listOfFiles[i].length()),
-							listOfFiles[i].getName());
-				}
-				else if (listOfFiles[i].isDirectory()) 
-					str = str + "DIR:\t" + listOfFiles[i].getName() + "\n";
-			}
-			return "\n************\n\tNumber of files in " + dir + " of " + hostName + 
-				" = " + lenStr + "\n" + str + "\n************\n";
-		}
-		catch(Exception ex)
-		{
-			ex.printStackTrace();
-			return "Exception in HDFSManager.getLS";
-		}
-	}
-	
+
 	public static int download(String fileName, String hdfsFolder, String localFolder, boolean overwrite)
 	{
 		org.apache.hadoop.conf.Configuration config = new org.apache.hadoop.conf.Configuration();
@@ -375,29 +349,5 @@ public class HDFSManager
 			ex.printStackTrace();
 			return null;
 		}
-	}
-	
-	private String getSizeString(long len)
-	{
-		Float r;
-		String unit;
-		
-		if (len > 1e9)
-		{
-			r = len / 1e9f;
-			unit = "GB";
-		}
-		else if (len > 1e6)
-		{
-			r = len / 1e6f;
-			unit = "MB";
-		}
-		else
-		{
-			r = len / 1e3f;
-			unit = "KB";
-		}
-		
-		return String.format("%.1f%s", r, unit);
 	}
 }
