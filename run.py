@@ -13,7 +13,7 @@ SAVE_EXEC_TIME = True
 
 if len(sys.argv) < 3:
 	print("Not enough arguments!")
-	print("Example of usage: ./run.py chunker_2.11-1.0.jar config.xml")
+	print("Example usage: ./run.py chunker_2.11-1.0.jar config.xml")
 	sys.exit(1)
 
 exeName	= sys.argv[1]
