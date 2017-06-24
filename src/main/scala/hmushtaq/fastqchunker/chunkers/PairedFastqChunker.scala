@@ -180,11 +180,11 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 			if (gzipOutStreams(ti).getSize > MIN_ZIP_FILE_SIZE)
 			{
 				if (interleave)
-					HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
+					writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + ".fq.gz", gzipOutStreams(ti).getByteArray)
 				else
 				{
-					HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-1.fq.gz", gzipOutStreams(ti).getByteArray)
-					HDFSManager.writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-2.fq.gz", gzipOutStreams2(ti).getByteArray)
+					writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-1.fq.gz", gzipOutStreams(ti).getByteArray)
+					writeWholeBinFile(outputFolder + "/" + chunkCtr(ti) + "-2.fq.gz", gzipOutStreams2(ti).getByteArray)
 				}
 				val s = "ti: " + ti + ", " + gzipOutStreams(ti).getSize + " bytes\n"
 				writeWholeFile(outputFolder + "/ulStatus/" + chunkCtr(ti), s)
