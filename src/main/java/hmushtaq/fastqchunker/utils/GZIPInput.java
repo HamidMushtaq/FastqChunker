@@ -35,9 +35,9 @@ public class GZIPInput
 	int bufferSize;
 	int remBufferLen;
 	GZIPInputStream gzi;
-	FileInputStream fis;
+	InputStream fis;
 	
-	public GZIPInput(FileInputStream fis, int bufferSize) throws IOException 
+	public GZIPInput(InputStream fis, int bufferSize) throws IOException 
 	{
 		gzi = new GZIPInputStream(fis, bufferSize);
 		this.bufferSize = bufferSize;

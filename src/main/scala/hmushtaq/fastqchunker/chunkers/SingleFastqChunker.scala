@@ -27,6 +27,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import java.util.zip.GZIPInputStream
 import java.io._
 import hmushtaq.fastqchunker.utils._
+import java.net.URL
 
 /**
  *
@@ -61,8 +62,9 @@ class SingleFastqChunker(config: Configuration)
 	
 	def makeChunks()
 	{	
-		val fis = new FileInputStream(new File(inputFileName))
-		val gis = if (inputFileName.contains(".gz")) new GZIPInput (fis, bufferSize) else null
+		val inputIsURL = isURL(inputFileName)
+		val fis = if (inputIsURL) new URL(inputFileName).openStream else new FileInputStream(new File(inputFileName))
+		val gis = if (inputFileName.contains(".gz")) new GZIPInput(fis, bufferSize) else null
 		val tmpBufferArray = new Array[Byte](bufferSize)
 		val bytesRead = new Array[Int](nThreads)
 		val bArray = new ByteArray(bufferSize*2)
@@ -84,6 +86,7 @@ class SingleFastqChunker(config: Configuration)
 		///
 		val f = new Array[Future[Unit]](nThreads)
 	
+		println("inputIsURL: " + inputIsURL)
 		while(!endReached)
 		{		
 			for(index <- 0 until nThreads)
@@ -190,6 +193,11 @@ class SingleFastqChunker(config: Configuration)
 				gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream, compLevel)
 			}
 		}
+	}
+	
+	protected def isURL(url: String) : Boolean =
+	{
+		return url.contains("ftp://") || url.contains("http://") || url.contains("https://")
 	}
 	
 	protected def writeWholeFile(filePath: String, s: String)

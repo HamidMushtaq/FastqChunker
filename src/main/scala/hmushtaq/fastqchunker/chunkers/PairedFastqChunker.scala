@@ -27,6 +27,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import java.util.zip.GZIPInputStream
 import java.io._
 import hmushtaq.fastqchunker.utils._
+import java.net.URL
+import java.io._
 
 /**
  *
@@ -38,20 +40,21 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 	protected val inputFileName2 = config.getFastq2Path
 	protected val gzipOutStreams2 = if (interleave) null else new Array[GZIPOutputStream1](nThreads)
 	protected val baFuture2 = new Array[ByteArray](nThreads)
+	protected val inputIsURL = isURL(inputFileName)
 	protected val (minHeaderLength, readLength) = getReadAndHeaderLength()
 	
 	override def makeChunks()
 	{	
 		val bytesRead = new Array[Int](nThreads)
 		// for fastq1 ////////////////////////////////////////////////////////////
-		val fis1 = new FileInputStream(new File(inputFileName))
+		val fis1 = if (inputIsURL) new URL(inputFileName).openStream else new FileInputStream(new File(inputFileName))
 		val gis1 = if (inputFileName.contains(".gz")) new GZIPInput (fis1, bufferSize) else null
 		val tmpBufferArray1 = new Array[Byte](bufferSize)
 		val bArray1 = new ByteArray(bufferSize*2)
 		val bArrayArray1 = new Array[ByteArray](nThreads)
 		var leftOver1: ByteArray = null
 		// for fastq2 ////////////////////////////////////////////////////////////
-		val fis2 = new FileInputStream(new File(inputFileName2))
+		val fis2 = if (inputIsURL) new URL(inputFileName2).openStream else new FileInputStream(new File(inputFileName2))
 		val gis2 = if (inputFileName2.contains(".gz")) new GZIPInput (fis2, bufferSize) else null
 		val tmpBufferArray2 = new Array[Byte](bufferSize)
 		val bArray2 = new ByteArray(bufferSize*2)
@@ -78,6 +81,7 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 	
 		val f = new Array[Future[Unit]](nThreads)
 	
+		println("inputIsURL: " + inputIsURL)
 		while(!endReached)
 		{
 			for(index <- 0 until nThreads)
@@ -277,9 +281,25 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 	{
 		val br = {
 			if (inputFileName.contains(".gz"))
-				new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(inputFileName))))
+			{
+				if (inputIsURL)
+				{
+					val is = new URL(inputFileName).openStream
+					new BufferedReader(new InputStreamReader(new GZIPInputStream(is)))
+				}
+				else
+					new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(inputFileName))))
+			}
 			else
-				new BufferedReader(new FileReader(inputFileName))
+			{
+				if (inputIsURL)
+				{
+					val url = new URL(inputFileName)
+					new BufferedReader(new InputStreamReader(url.openStream))
+				}
+				else
+					new BufferedReader(new FileReader(inputFileName))
+			}
 		}
 				
 		val headerLen = br.readLine.size
