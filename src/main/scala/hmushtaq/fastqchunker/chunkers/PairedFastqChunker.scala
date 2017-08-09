@@ -47,14 +47,14 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 	{	
 		val bytesRead = new Array[Int](nThreads)
 		// for fastq1 ////////////////////////////////////////////////////////////
-		val fis1 = if (inputIsURL) new URL(inputFileName).openStream else new FileInputStream(new File(inputFileName))
+		val fis1 = if (inputIsURL) openURLStream(inputFileName) else new FileInputStream(new File(inputFileName))
 		val gis1 = if (inputFileName.contains(".gz")) new GZIPInput (fis1, bufferSize) else null
 		val tmpBufferArray1 = new Array[Byte](bufferSize)
 		val bArray1 = new ByteArray(bufferSize*2)
 		val bArrayArray1 = new Array[ByteArray](nThreads)
 		var leftOver1: ByteArray = null
 		// for fastq2 ////////////////////////////////////////////////////////////
-		val fis2 = if (inputIsURL) new URL(inputFileName2).openStream else new FileInputStream(new File(inputFileName2))
+		val fis2 = if (inputIsURL) openURLStream(inputFileName2) else new FileInputStream(new File(inputFileName2))
 		val gis2 = if (inputFileName2.contains(".gz")) new GZIPInput (fis2, bufferSize) else null
 		val tmpBufferArray2 = new Array[Byte](bufferSize)
 		val bArray2 = new ByteArray(bufferSize*2)
@@ -284,7 +284,7 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 			{
 				if (inputIsURL)
 				{
-					val is = new URL(inputFileName).openStream
+					val is = openURLStream(inputFileName)
 					new BufferedReader(new InputStreamReader(new GZIPInputStream(is)))
 				}
 				else
@@ -293,10 +293,7 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 			else
 			{
 				if (inputIsURL)
-				{
-					val url = new URL(inputFileName)
-					new BufferedReader(new InputStreamReader(url.openStream))
-				}
+					new BufferedReader(new InputStreamReader(openURLStream(inputFileName)))
 				else
 					new BufferedReader(new FileReader(inputFileName))
 			}
@@ -306,6 +303,7 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 		val readLen = br.readLine.size
 		br.close
 		
+		println("HAMIDLen: headerLen = " + headerLen + ", readLen = " + readLen)
 		(headerLen, readLen)
 	}
 }

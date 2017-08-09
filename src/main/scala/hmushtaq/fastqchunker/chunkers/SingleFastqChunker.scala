@@ -28,6 +28,7 @@ import java.util.zip.GZIPInputStream
 import java.io._
 import hmushtaq.fastqchunker.utils._
 import java.net.URL
+import javax.net.ssl.HttpsURLConnection
 
 /**
  *
@@ -58,12 +59,12 @@ class SingleFastqChunker(config: Configuration)
 	{
 		chunkCtr(ti) = ti
 		gzipOutStreams(ti) = new GZIPOutputStream1(new ByteArrayOutputStream, compLevel)
-	}
-	
+	}	
+
 	def makeChunks()
 	{	
 		val inputIsURL = isURL(inputFileName)
-		val fis = if (inputIsURL) new URL(inputFileName).openStream else new FileInputStream(new File(inputFileName))
+		val fis = if (inputIsURL) openURLStream(inputFileName) else new FileInputStream(new File(inputFileName))
 		val gis = if (inputFileName.contains(".gz")) new GZIPInput(fis, bufferSize) else null
 		val tmpBufferArray = new Array[Byte](bufferSize)
 		val bytesRead = new Array[Int](nThreads)
@@ -198,6 +199,17 @@ class SingleFastqChunker(config: Configuration)
 	protected def isURL(url: String) : Boolean =
 	{
 		return url.contains("ftp://") || url.contains("http://") || url.contains("https://")
+	}
+		
+	protected def openURLStream(urlLink: String) : InputStream =
+	{
+		if (urlLink.contains("https://"))
+			return URLStream.openHTTPsStream(urlLink)
+		else
+		{
+			println("HAMID: ftp!")
+			return new URL(urlLink).openStream
+		}
 	}
 	
 	protected def writeWholeFile(filePath: String, s: String)

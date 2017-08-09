@@ -52,45 +52,48 @@ public class GZIPInput
 	{
 		int index = 0;
 		int totalBytesRead = 0;
+				
+		// Copy from remBuffer first
+		if (remBufferLen != 0)
+		{
+			System.arraycopy(remBuffer, 0, buffer, 0, remBufferLen);
+			index += remBufferLen;
+			totalBytesRead += remBufferLen;
+		}
 		
-		try
+		while (index < bufferSize)
 		{
-			// Copy from remBuffer first
-			if (remBufferLen != 0)
+			int bytesRead = -1;
+			try
 			{
-				System.arraycopy(remBuffer, 0, buffer, 0, remBufferLen);
-				index += remBufferLen;
-				totalBytesRead += remBufferLen;
+				bytesRead = gzi.read(readBuffer);
 			}
-			
-			while (index < bufferSize)
+			catch(Exception ex)
 			{
-				int bytesRead = gzi.read(readBuffer);
-				if (bytesRead == -1)
-				{
-					remBufferLen = 0;
-					break;
-				}
-				System.arraycopy(readBuffer, 0, buffer, index, bytesRead);
-				index += bytesRead;
-				totalBytesRead += bytesRead;
+				ex.printStackTrace();
+				System.exit(-1);
 			}
-			
-			if (index >= bufferSize)
+			if (bytesRead == -1)
 			{
-				System.arraycopy(buffer, 0, rBuffer, 0, bufferSize);
-				remBufferLen = index - bufferSize;
-				System.arraycopy(buffer, bufferSize, remBuffer, 0, remBufferLen); 
-				totalBytesRead = bufferSize;
+				System.out.println("HAMID: Bytes read = -1");
+				remBufferLen = 0;
+				break;
 			}
-			else
-				System.arraycopy(buffer, 0, rBuffer, 0, totalBytesRead);
+			System.arraycopy(readBuffer, 0, buffer, index, bytesRead);
+			index += bytesRead;
+			totalBytesRead += bytesRead;
 		}
-		catch(IOException ex)
+		
+		if (index >= bufferSize)
 		{
-			ex.printStackTrace();
-			System.exit(-1);
+			System.arraycopy(buffer, 0, rBuffer, 0, bufferSize);
+			remBufferLen = index - bufferSize;
+			System.arraycopy(buffer, bufferSize, remBuffer, 0, remBufferLen); 
+			totalBytesRead = bufferSize;
 		}
+		else
+			System.arraycopy(buffer, 0, rBuffer, 0, totalBytesRead);
+	
 		return (totalBytesRead == 0)? -1 : totalBytesRead;
 	}
 	
