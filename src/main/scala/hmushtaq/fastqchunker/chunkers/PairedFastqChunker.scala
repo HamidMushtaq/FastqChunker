@@ -48,6 +48,10 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 		val bytesRead = new Array[Int](nThreads)
 		// for fastq1 ////////////////////////////////////////////////////////////
 		val fis1 = if (inputIsURL) openURLStream(inputFileName) else new FileInputStream(new File(inputFileName))
+		// Hamid - Test //////////////////////////////////////////////////////
+		URLStream.downloadUncompressed(fis1, "downloaded.fq")
+		System.exit(1)
+		//////////////////////////////////////////////////////////////////////
 		val gis1 = if (inputFileName.contains(".gz")) new GZIPInput (fis1, bufferSize) else null
 		val tmpBufferArray1 = new Array[Byte](bufferSize)
 		val bArray1 = new ByteArray(bufferSize*2)

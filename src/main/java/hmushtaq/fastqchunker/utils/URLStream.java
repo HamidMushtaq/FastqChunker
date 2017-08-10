@@ -23,6 +23,8 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.io.*;
 import javax.net.ssl.*;
+import java.util.zip.GZIPInputStream;
+import java.nio.charset.StandardCharsets;
 
 //https://stackoverflow.com/questions/10135074/download-file-from-https-server-using-java
 
@@ -105,6 +107,65 @@ public class URLStream
 		finally 
 		{
 			input.close();
+		}
+	}
+	
+	public static void downloadUncompressed(InputStream input, String ofname) throws IOException
+	{
+		byte[] buffer = new byte[8 * 1024];
+		GZIPInputStream gzis = new GZIPInputStream(input);
+		InputStreamReader reader = new InputStreamReader(gzis, StandardCharsets.UTF_8);
+		BufferedReader in = new BufferedReader(reader);
+		
+		try 
+		{
+			FileOutputStream fos = new FileOutputStream(ofname);
+			try 
+			{
+				long totalBytesRead = 0;
+				int accBytes = 0;
+				int bytesRead;
+				
+				String readed;
+				boolean done = false;
+				int nullCount = 0;
+				
+				while(!done)
+				{
+					while ((readed = in.readLine()) == null)
+					{
+						nullCount++;
+						System.out.println("nullCount = " + nullCount);
+						if (nullCount == 5)
+						{
+							done = true;
+							break;
+						}
+					}
+					nullCount = 0;
+					if (!done)
+					{
+						bytesRead = readed.length();
+						accBytes += bytesRead;
+						totalBytesRead += bytesRead;
+						if (accBytes > 1e6)
+						{
+							accBytes = 0;
+							System.out.println((totalBytesRead / (1024*1024)) + " MB downloaded");
+						}
+						fos.write(readed.getBytes(), 0, bytesRead);
+					}
+				}
+			} 
+			finally 
+			{
+				fos.close();
+			}
+		} 
+		finally 
+		{
+			in.close();
+			gzis.close();
 		}
 	}
 }
