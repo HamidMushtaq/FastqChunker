@@ -49,8 +49,8 @@ class PairedFastqChunker(config: Configuration) extends SingleFastqChunker(confi
 		// for fastq1 ////////////////////////////////////////////////////////////
 		val fis1 = if (inputIsURL) openURLStream(inputFileName) else new FileInputStream(new File(inputFileName))
 		// Hamid - Test //////////////////////////////////////////////////////
-		URLStream.downloadUncompressed("https://dnanexus-rnd.s3.amazonaws.com/NA12878-xten/reads/NA12878D_HiSeqX_R1.fastq.gz", "uncompressed.fastq")
-		System.exit(1)
+		//URLStream.downloadUncompressed("https://dnanexus-rnd.s3.amazonaws.com/NA12878-xten/reads/NA12878D_HiSeqX_R1.fastq.gz", "uncompressed.fastq")
+		//System.exit(1)
 		//////////////////////////////////////////////////////////////////////
 		val gis1 = if (inputFileName.contains(".gz")) new GZIPInput (fis1, bufferSize) else null
 		val tmpBufferArray1 = new Array[Byte](bufferSize)
