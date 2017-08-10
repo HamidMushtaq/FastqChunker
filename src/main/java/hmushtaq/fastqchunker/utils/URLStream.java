@@ -26,7 +26,7 @@ import javax.net.ssl.*;
 import java.util.zip.GZIPInputStream;
 import java.nio.charset.StandardCharsets;
 
-//https://stackoverflow.com/questions/10135074/download-file-from-https-server-using-java
+// Help taken from https://stackoverflow.com/questions/41400810/gzipinputstream-closes-prematurely-when-decompressing-httpinputstream
 
 /**
  *
@@ -34,138 +34,76 @@ import java.nio.charset.StandardCharsets;
  */
 public class URLStream
 {
-	public static InputStream openHTTPsStream(String httpsURL)
+	//////////////////////////////////////////////////////////////////////////
+	public static class AvailableInputStream extends InputStream 
 	{
-		try
-		{
-			// Create a new trust manager that trust all certificates
-			TrustManager[] trustAllCerts = new TrustManager[]
-			{
-				new X509TrustManager() 
-				{
-					public java.security.cert.X509Certificate[] getAcceptedIssuers() 
-					{
-						return null;
-					}
-					public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) 
-					{
-					}
-					public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) 
-					{
-					}
-				}
-			};
-			
-			SSLContext sc = SSLContext.getInstance("SSL");
-			sc.init(null, trustAllCerts, new java.security.SecureRandom());
-			HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-						
-			URL myurl = new URL(httpsURL);
-			//////////////////////////////////////////////////////////////////
-			//URLConnection con = myurl.openConnection();
-			HttpsURLConnection con = (HttpsURLConnection)(myurl.openConnection());
-			//////////////////////////////////////////////////////////////////
-			System.out.println("HAMIDJava: https!, class is " + con.getClass());
-			return con.getInputStream();
-		}
-		catch (Exception ex) 
-		{
-			ex.printStackTrace();
-			return null;
-		}
-	}
+        private InputStream is;
 
-	public static void download(InputStream input, String ofname) throws IOException
+        AvailableInputStream(InputStream inputstream) {
+            is = inputstream;
+        }
+
+        public int read() throws IOException {
+            return(is.read());
+        }
+
+        public int read(byte[] b) throws IOException {
+            return(is.read(b));
+        }
+
+        public int read(byte[] b, int off, int len) throws IOException {
+            return(is.read(b, off, len));
+        }
+
+        public void close() throws IOException {
+            is.close();
+        }
+
+        public int available() throws IOException {
+            // Always say that we have 1 more byte in the
+            // buffer, even when we don't
+            int a = is.available();
+            if (a == 0) {
+                return(1);
+            } else {
+                return(a);
+            }
+        }
+    }
+	//////////////////////////////////////////////////////////////////////////
+
+	public static InputStream openHTTPsStream(String urlLink) throws Exception
 	{
-		byte[] buffer = new byte[8 * 1024];
+		URL url = new URL(urlLink);
+		System.out.println("downloaded URL: "+ urlLink.toString());
 
-		try 
-		{
-			OutputStream output = new FileOutputStream(ofname);
-			try 
-			{
-				int bytesRead;
-				long totalBytesRead = 0;
-				int accBytes = 0;
-				while ((bytesRead = input.read(buffer)) != -1) 
-				{
-					accBytes += bytesRead;
-					totalBytesRead += bytesRead;
-					if (accBytes > 1e6)
-					{
-						accBytes = 0;
-						System.out.println((totalBytesRead / (1024*1024)) + " MB downloaded");
-					}
-					output.write(buffer, 0, bytesRead);
-				}
-			} 
-			finally 
-			{
-				output.close();
-			}
-		} 
-		finally 
-		{
-			input.close();
-		}
+        URLConnection urlConnection = url.openConnection();
+        return new AvailableInputStream(urlConnection.getInputStream());
 	}
 	
-	public static void downloadUncompressed(InputStream input, String ofname) throws IOException
+	public static void downloadUncompressed(String urlString, String ofname) throws Exception
 	{
-		byte[] buffer = new byte[8 * 1024];
-		GZIPInputStream gzis = new GZIPInputStream(input);
-		InputStreamReader reader = new InputStreamReader(gzis, StandardCharsets.UTF_8);
-		BufferedReader in = new BufferedReader(reader);
-		
-		try 
+		URL url = new URL(urlString);
+		System.out.println("downloaded URL: "+ url.toString());
+
+        // First directly wrap the HTTP inputStream with GZIPInputStream
+        // and count the number of bytes we read
+        // Go ahead and save the extracted stream to a file for further inspection
+        int bytesFromGZIPDirect = 0;
+        URLConnection urlConnection = url.openConnection();
+        // Wrap the HTTPInputStream in our AvailableHttpInputStream
+        AvailableInputStream ais = new AvailableInputStream(urlConnection.getInputStream());
+        GZIPInputStream gzipishttp = new GZIPInputStream(ais);
+        FileOutputStream directGZIPOutStream = new FileOutputStream(ofname);
+        int buffersize = 1024;
+        byte[] buffer = new byte[buffersize];
+        int bytesRead = -1;
+        while ((bytesRead = gzipishttp.read(buffer, 0, buffersize)) != -1) 
 		{
-			FileOutputStream fos = new FileOutputStream(ofname);
-			try 
-			{
-				long totalBytesRead = 0;
-				int accBytes = 0;
-				int bytesRead;
-				
-				String readed;
-				boolean done = false;
-				int nullCount = 0;
-				
-				while(!done)
-				{
-					while ((readed = in.readLine()) == null)
-					{
-						nullCount++;
-						System.out.println("nullCount = " + nullCount);
-						if (nullCount == 5)
-						{
-							done = true;
-							break;
-						}
-					}
-					nullCount = 0;
-					if (!done)
-					{
-						bytesRead = readed.length();
-						accBytes += bytesRead;
-						totalBytesRead += bytesRead;
-						if (accBytes > 1e6)
-						{
-							accBytes = 0;
-							System.out.println((totalBytesRead / (1024*1024)) + " MB downloaded");
-						}
-						fos.write(readed.getBytes(), 0, bytesRead);
-					}
-				}
-			} 
-			finally 
-			{
-				fos.close();
-			}
-		} 
-		finally 
-		{
-			in.close();
-			gzis.close();
-		}
+            bytesFromGZIPDirect += bytesRead;
+            directGZIPOutStream.write(buffer, 0, bytesRead); // save to file for further inspection
+        }
+        gzipishttp.close();
+        directGZIPOutStream.close();
 	}
 }
