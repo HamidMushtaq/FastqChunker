@@ -37,7 +37,7 @@ import javax.net.ssl.HttpsURLConnection
 class SingleFastqChunker(config: Configuration)
 {
 	protected val nThreads = config.getNumThreads.toInt
-	protected val bufferSize = config.getBlockSizeMB.toInt * 1024 * 1024
+	protected val bufferSize = (config.getBlockSizeMB.toFloat * 1024 * 1024).toInt
 	protected val chunkSize: Int = config.getChunkSizeMB.toInt * 1024 * 1024
 	protected val compLevel = config.getCompLevel.toInt
 	protected val inputFileName = config.getFastq1Path
